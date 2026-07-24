@@ -17,7 +17,7 @@ async function main() {
     i_know_what_im_doing: true,
   })
 
-  const browser = await (firefox as any).launch(opts)
+  const browser = await firefox.launch(opts)
   const ctx = await browser.newContext({ viewport: null })
   const page = await ctx.newPage()
 
@@ -27,8 +27,8 @@ async function main() {
       waitUntil: "domcontentloaded",
       timeout: 30000,
     })
-    .catch((e: any) => {
-      console.log("[test] goto error:", e.message.slice(0, 80))
+    .catch((error: unknown) => {
+      console.log("[test] goto error:", error instanceof Error ? error.message.slice(0, 80) : String(error))
     })
 
   await new Promise((r) => setTimeout(r, 8000))
@@ -48,7 +48,7 @@ async function main() {
   }
 
   const cookies = await ctx.cookies()
-  console.log("[test] cookies:", cookies.map((c: any) => c.name).join(", "))
+  console.log("[test] cookies:", cookies.map((c) => c.name).join(", "))
 
   await browser.close()
 }

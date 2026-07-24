@@ -23,8 +23,8 @@ export class PoolExhaustedError extends Error {
 export type { BrowserHandle } from "@trawl/types"
 
 interface PoolEntry extends PoolBrowser {
-  browser: Browser | null
-  context: BrowserContext | null
+  browser?: Browser
+  context?: BrowserContext
   temporaryContextUses: number
   restartReason?: string
   restarting?: boolean
@@ -41,7 +41,7 @@ export class BrowserPool {
   private recycleAfterTemporaryContexts: number
   private contentProcesses!: number
   private browserFactory?: BrowserFactory
-  private healthInterval: ReturnType<typeof setInterval> | null = null
+  private healthInterval?: ReturnType<typeof setInterval>
 
   constructor({
     poolSize,
@@ -207,8 +207,7 @@ export class BrowserPool {
       const _attachShadow = Element.prototype.attachShadow
       Element.prototype.attachShadow = function (init: ShadowRootInit) {
         const shadowRoot = _attachShadow.call(this, init)
-        // biome-ignore lint/suspicious/noExplicitAny: extending DOM element with custom property
-        ;(this as any).shadowRootUnl = shadowRoot
+        Object.defineProperty(this, "shadowRootUnl", { configurable: true, value: shadowRoot })
         return shadowRoot
       }
     })
@@ -253,9 +252,9 @@ export class BrowserPool {
     })
   }
 
-  private pickEntry(domain?: string): PoolEntry | null {
+  private pickEntry(domain?: string): PoolEntry | undefined {
     const available = this.entries.filter((e) => !e.busy && !e.restarting && e.healthy && e.context)
-    if (available.length === 0) return null
+    if (available.length === 0) return
     if (domain) {
       const sticky = available.find((e) => e.lastDomain === domain)
       if (sticky) return sticky
@@ -321,8 +320,8 @@ export class BrowserPool {
     try {
       await entry.browser?.close()
     } catch {}
-    entry.browser = null
-    entry.context = null
+    delete entry.browser
+    delete entry.context
     try {
       // On restart, keep the entry's original fingerprint so this browser instance
       // keeps its identity across restart cycles (otherwise cross-session correlation
@@ -355,7 +354,10 @@ export class BrowserPool {
   }
 
   async shutdown(): Promise<void> {
-    if (this.healthInterval) clearInterval(this.healthInterval)
+    if (this.healthInterval) {
+      clearInterval(this.healthInterval)
+      delete this.healthInterval
+    }
     for (const entry of this.entries) {
       await entry.context?.close().catch(() => {})
       await entry.browser?.close().catch(() => {})
@@ -364,10 +366,7 @@ export class BrowserPool {
   }
 }
 
-// Creates a fresh context from any browser with TRAWL init scripts applied.
-// A fresh context (no prior cookies/localStorage/service workers) gets CF managed-mode
-// treatment — challenge resolves in 3-4s vs ~40s for warm/reused contexts.
-// biome-ignore lint/suspicious/noExplicitAny: camoufox-js doesn't export BrowserContext type
+// biome-ignore lint/suspicious/noExplicitAny: preserves the caller's Playwright or Patchright context type
 export const newFreshContext = async (browser: any, options?: { proxy?: string }): Promise<any> => {
   const context = await browser.newContext({
     viewport: null,
@@ -385,8 +384,7 @@ export const newFreshContext = async (browser: any, options?: { proxy?: string }
     const _orig = Element.prototype.attachShadow
     Element.prototype.attachShadow = function (init: ShadowRootInit) {
       const r = _orig.call(this, init)
-      // biome-ignore lint/suspicious/noExplicitAny: extending DOM element with custom property
-      ;(this as any).shadowRootUnl = r
+      Object.defineProperty(this, "shadowRootUnl", { configurable: true, value: r })
       return r
     }
   })

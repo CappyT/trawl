@@ -8,7 +8,7 @@ process.on("uncaughtException", (err) => {
 })
 
 async function main() {
-  const browser: any = await Camoufox({
+  const browser = await Camoufox({
     headless: true,
     geoip: true,
     humanize: true,
@@ -59,7 +59,7 @@ async function main() {
   const cookies = await ctx.cookies()
   console.log(
     "[3] cf_clearance:",
-    cookies.some((c: any) => c.name === "cf_clearance"),
+    cookies.some((c) => c.name === "cf_clearance"),
   )
 
   await browser.close()

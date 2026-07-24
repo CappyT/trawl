@@ -18,13 +18,13 @@ export class SessionCache {
     await this.redis.set(this.key(domain), JSON.stringify(data), "EX", this.ttl)
   }
 
-  async load(domain: string): Promise<SessionData | null> {
+  async load(domain: string) {
     const raw = await this.redis.get(this.key(domain))
-    if (!raw) return null
+    if (!raw) return
     try {
       return JSON.parse(raw) as SessionData
     } catch {
-      return null
+      return
     }
   }
 

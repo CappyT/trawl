@@ -2,7 +2,7 @@ import { Camoufox } from "camoufox-js"
 
 async function main() {
   console.log("[test] launching Camoufox...")
-  const browser: any = await Camoufox({
+  const browser = await Camoufox({
     headless: true,
     geoip: true,
     humanize: true,
@@ -22,8 +22,8 @@ async function main() {
   const title = await page.title()
   console.log("[test] UA:", ua)
   console.log("[test] Title:", title)
-  console.log("[test] navigator.webdriver:", await page.evaluate(() => (navigator as any).webdriver))
-  console.log("[test] window.chrome exists:", await page.evaluate(() => !!(window as any).chrome))
+  console.log("[test] navigator.webdriver:", await page.evaluate(() => navigator.webdriver))
+  console.log("[test] window.chrome exists:", await page.evaluate(() => "chrome" in window))
 
   await browser.close()
   console.log("[test] PASS")

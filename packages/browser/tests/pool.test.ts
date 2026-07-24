@@ -1,5 +1,17 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { BrowserPool } from "../src/pool"
+
+const pools: BrowserPool[] = []
+
+const createPool = (opts: ConstructorParameters<typeof BrowserPool>[0]): BrowserPool => {
+  const pool = new BrowserPool(opts)
+  pools.push(pool)
+  return pool
+}
+
+afterEach(async () => {
+  await Promise.all(pools.splice(0).map((pool) => pool.shutdown()))
+})
 
 const waitFor = async (predicate: () => boolean) => {
   const deadline = Date.now() + 1000
@@ -52,7 +64,7 @@ describe("BrowserPool recycling", () => {
   test("restarts the browser after the temporary context threshold", async () => {
     const { factory, browsers, contexts } = makeFactory()
 
-    const pool = new BrowserPool({
+    const pool = createPool({
       poolSize: 1,
       recycleAfterTemporaryContexts: 2,
       browserFactory: factory,
@@ -82,7 +94,7 @@ describe("BrowserPool recycling", () => {
   test("noteTemporaryContext is no-op when recycleAfterTemporaryContexts=0", async () => {
     const { factory, browsers } = makeFactory()
 
-    const pool = new BrowserPool({
+    const pool = createPool({
       poolSize: 1,
       recycleAfterTemporaryContexts: 0, // disabled
       browserFactory: factory,
@@ -109,7 +121,7 @@ describe("BrowserPool recycling", () => {
     // that the pool, given N successful acquires, never recycles on its own.
     const { factory, browsers } = makeFactory()
 
-    const pool = new BrowserPool({
+    const pool = createPool({
       poolSize: 1,
       recycleAfterTemporaryContexts: 2,
       browserFactory: factory,
@@ -134,7 +146,7 @@ describe("BrowserPool recycling", () => {
     // option round-trips through the constructor without error.
     const { factory } = makeFactory()
 
-    const pool = new BrowserPool({
+    const pool = createPool({
       poolSize: 1,
       contentProcesses: 4,
       browserFactory: factory,
