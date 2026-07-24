@@ -48,6 +48,16 @@ export interface ScrapeResult {
   totalMs: number
   captchasSolved?: string[] // captcha types solved during this request (e.g. ['turnstile', 'recaptcha-v2'])
   proxyUsed?: boolean // true if the winning tier routed through a proxy (Tier 3 datacenter pool or Tier 4 residential pool/override)
+  // Raw response payload — populated by all tiers when available. The MITM proxy
+  // (:8192) consumes this; /scrape and FlareSolverr /v1 still rely on `html` only.
+  // Binary content (images, .torrent, videos) MUST use this field — `html` would
+  // corrupt non-UTF8 bytes via normalizeHtml().
+  body?: Uint8Array
+  // Upstream response headers (lowercased keys), preserved verbatim so the proxy
+  // can forward Set-Cookie, Content-Disposition, Content-Range, cache validators, etc.
+  responseHeaders?: Record<string, string>
+  // Convenience: extracted Content-Type header. Same as responseHeaders['content-type'].
+  contentType?: string
 }
 
 export interface SessionData {
