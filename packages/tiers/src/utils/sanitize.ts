@@ -28,7 +28,7 @@ export const RESERVED_HEADER_NAMES: ReadonlySet<string> = new Set([
 ])
 
 export function sanitizeHeaders(headers?: Record<string, string>): Record<string, string> | undefined {
-  if (!headers) return undefined
+  if (!headers) return
   const out: Record<string, string> = {}
   for (const [rawName, rawValue] of Object.entries(headers)) {
     const name = rawName.trim()
@@ -41,6 +41,57 @@ export function sanitizeHeaders(headers?: Record<string, string>): Record<string
   }
   return Object.keys(out).length ? out : undefined
 }
+
+// Hop-by-hop headers per RFC 7230 §6.1 — connection-scoped, not forwarded end-to-end.
+// These are the only headers a transparent HTTP proxy should strip from a client's
+// request. Everything else (Authorization, Cookie, Range, custom API keys, etc.) is
+// passed through. The key difference from `sanitizeHeaders()`: that function is the
+// security boundary for the public /scrape API; this one is for trusted internal
+// clients of the MITM proxy at :8192.
+const HOP_BY_HOP_HEADERS: ReadonlySet<string> = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "proxy-connection", // legacy but still seen
+  "te",
+  "trailer", // hop-by-hop per spec
+  "transfer-encoding",
+  "upgrade",
+])
+
+/**
+ * Permissive header sanitizer for the MITM proxy at :8192.
+ *
+ * Strips only RFC 7230 hop-by-hop headers (Connection, Transfer-Encoding, Upgrade,
+ * Keep-Alive, Proxy-*, TE, Trailer). Everything else — including Authorization,
+ * Cookie, Range, User-Agent, Referer, custom API tokens — flows through to the
+ * upstream as the client sent it. Header values are still sanitized for control
+ * characters (NUL/CR/LF) to prevent request smuggling.
+ *
+ * Returned keys are lowercased so the proxy can match them cheaply against
+ * lookup tables when forwarding.
+ */
+export function proxySanitizeHeaders(headers?: Record<string, string>): Record<string, string> | undefined {
+  if (!headers) return
+  const out: Record<string, string> = {}
+  for (const [rawName, rawValue] of Object.entries(headers)) {
+    const name = rawName.trim()
+    if (!name) continue
+    if (HOP_BY_HOP_HEADERS.has(name.toLowerCase())) continue
+    const value = String(rawValue ?? "")
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: NUL/CR/LF are exactly what we want to strip from header values
+      .replace(/[\x00\r\n]/g, "")
+      .trim()
+    if (!value) continue
+    out[name.toLowerCase()] = value
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
+// Hop-by-hop response headers — also per RFC 7230 §6.1. Forwarded response
+// headers from upstream should have these stripped before they reach the client.
+export const RESPONSE_HOP_BY_HOP_HEADERS: ReadonlySet<string> = HOP_BY_HOP_HEADERS
 
 import type { SupportedMethod } from "@trawl/types"
 
