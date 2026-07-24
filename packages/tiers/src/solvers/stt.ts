@@ -26,17 +26,17 @@ const FFMPEG = process.env.FFMPEG_PATH ?? "ffmpeg"
 const GOOGLE_STT =
   "https://www.google.com/speech-api/v2/recognize?output=json&lang=en-US&key=AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw"
 
-export async function transcribeAudio(audioUrl: string, signal?: AbortSignal): Promise<string | null> {
+export async function transcribeAudio(audioUrl: string, signal?: AbortSignal): Promise<string | undefined> {
   return STT_URL ? transcribeWhisper(audioUrl, signal) : transcribeGoogle(audioUrl, signal)
 }
 
-async function transcribeWhisper(audioUrl: string, signal?: AbortSignal): Promise<string | null> {
+async function transcribeWhisper(audioUrl: string, signal?: AbortSignal): Promise<string | undefined> {
   try {
     const res = await fetch(audioUrl, {
       signal,
       headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/149" },
     })
-    if (!res.ok) return null
+    if (!res.ok) return
 
     const form = new FormData()
     form.append("file", await res.blob(), "audio.mp3")
@@ -48,16 +48,16 @@ async function transcribeWhisper(audioUrl: string, signal?: AbortSignal): Promis
     if (STT_KEY) headers.Authorization = `Bearer ${STT_KEY}`
 
     const sttRes = await fetch(STT_URL, { method: "POST", headers, body: form, signal })
-    if (!sttRes.ok) return null
+    if (!sttRes.ok) return
     return clean(await sttRes.text())
   } catch {
-    return null
+    return
   }
 }
 
 // Converts MP3 → FLAC via ffmpeg, sends to Google's free Speech API.
 // Tries 8000 Hz first (reCAPTCHA audio is typically low-bitrate), then 16000 Hz.
-async function transcribeGoogle(audioUrl: string, signal?: AbortSignal): Promise<string | null> {
+async function transcribeGoogle(audioUrl: string, signal?: AbortSignal): Promise<string | undefined> {
   const id = randomUUID().slice(0, 8)
   const mp3 = `/tmp/trawl-${id}.mp3`
   const flac8 = `/tmp/trawl-${id}-8k.flac`
@@ -75,13 +75,13 @@ async function transcribeGoogle(audioUrl: string, signal?: AbortSignal): Promise
     })
     if (!res.ok) {
       console.log("[stt] audio download failed:", res.status)
-      return null
+      return
     }
     const audioBytes = await res.arrayBuffer()
     console.log("[stt] audio downloaded:", audioBytes.byteLength, "bytes, type:", res.headers.get("content-type"))
     if (audioBytes.byteLength < 1000) {
       console.log("[stt] audio too small")
-      return null
+      return
     }
     await Bun.write(mp3, audioBytes)
 
@@ -127,10 +127,10 @@ async function transcribeGoogle(audioUrl: string, signal?: AbortSignal): Promise
         } catch {}
       }
     }
-    return null
+    return
   } catch (err) {
     console.log("[stt] error:", err instanceof Error ? err.message : err)
-    return null
+    return
   } finally {
     await $`rm -f ${mp3} ${flac8} ${flac16}`.nothrow().catch(() => {})
   }

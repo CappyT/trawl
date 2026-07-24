@@ -134,14 +134,14 @@ export async function solveRecaptchaV2(page: Page, timeoutMs = 30_000): Promise<
         (await bframe
           .locator(".rc-audiochallenge-tdownload-link")
           .getAttribute("href", { timeout: 1000 })
-          .catch(() => null)) ||
+          .catch(() => undefined)) ||
         ""
 
       // Reject blob: URLs — they're browser-internal and can't be fetched from outside
-      const audioHref = rawHref && !rawHref.startsWith("blob:") ? rawHref : null
+      const audioHref = rawHref && !rawHref.startsWith("blob:") ? rawHref : undefined
       console.log("[recaptcha] raw audio href:", rawHref?.slice(0, 100) ?? "none")
 
-      console.log("[recaptcha] audio URL:", audioHref?.slice(0, 80) ?? "null")
+      console.log("[recaptcha] audio URL:", audioHref?.slice(0, 80) ?? "unavailable")
 
       if (!audioHref) {
         console.log("[recaptcha] audio URL not found, retry", attempt)

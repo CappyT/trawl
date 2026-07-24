@@ -16,7 +16,7 @@ export async function waitForImpervaResolution(
   originalUrl?: string,
 ): Promise<"ok" | "ip-blocked" | "timeout"> {
   const deadline = Date.now() + Math.max(timeoutMs, 30_000)
-  let sensorCookieAt: number | null = null
+  let sensorCookieAt: number | undefined
 
   const targetHost = (() => {
     try {
@@ -51,7 +51,7 @@ export async function waitForImpervaResolution(
       )
 
       if (hasSensorCookie) {
-        if (sensorCookieAt === null) {
+        if (sensorCookieAt === undefined) {
           sensorCookieAt = Date.now()
           console.log("[imperva] sensor cookie obtained")
         }

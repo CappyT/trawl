@@ -59,11 +59,11 @@ async function detectTurnstile(page: Page, timeoutMs: number): Promise<boolean> 
             )
           )
             return "iframe"
-          const inp = document.querySelector('input[name="cf-turnstile-response"]') as HTMLInputElement | null
-          if (inp && inp.value.length > 10) return "token"
-          return null
+          const input = document.querySelector('input[name="cf-turnstile-response"]')
+          if (input instanceof HTMLInputElement && input.value.length > 10) return "token"
+          return
         })
-        .catch(() => null)
+        .catch(() => undefined)
 
       if (viaDOM === "iframe") return true
       if (viaDOM === "token") {

@@ -16,7 +16,7 @@ export async function waitForChallengeResolution(
 ): Promise<"ok" | "ip-blocked" | "timeout"> {
   const deadline = Date.now() + Math.max(timeoutMs, 30_000)
   let lastClickAttempt = 0
-  let cfClearanceAt: number | null = null
+  let cfClearanceAt: number | undefined
 
   // Only count cf_clearance for the current domain — warm browser may have cookies from prior domains
   const targetHost = (() => {
@@ -61,7 +61,7 @@ export async function waitForChallengeResolution(
             targetHost.endsWith(c.domain.replace(/^\./, ""))),
       )
       if (hasDomainClearance) {
-        if (cfClearanceAt === null) {
+        if (cfClearanceAt === undefined) {
           cfClearanceAt = Date.now()
           console.log("[challenge] cf_clearance obtained")
         }
@@ -103,8 +103,8 @@ async function attemptTurnstileClick(page: Page): Promise<boolean> {
     if (clicked) return true
 
     // C: page-coordinate click — bypasses Fission by clicking on page instead of inside frame
-    const frameEl = await frame.frameElement().catch(() => null)
-    const box = frameEl ? await frameEl.boundingBox().catch(() => null) : null
+    const frameEl = await frame.frameElement().catch(() => undefined)
+    const box = frameEl ? await frameEl.boundingBox().catch(() => undefined) : undefined
     if (box && box.width > 20) {
       const cx = box.x + Math.min(24, box.width * 0.15)
       const cy = box.y + box.height / 2
@@ -138,11 +138,9 @@ async function clickShadowCheckbox(_page: Page, frame: Frame): Promise<boolean> 
   try {
     const handle = await frame
       .evaluateHandle(() => {
-        // biome-ignore lint/suspicious/noExplicitAny: shadow DOM traversal
-        const roots: any[] = []
-        // biome-ignore lint/suspicious/noExplicitAny: shadow DOM traversal
-        function collect(node: any) {
-          if (!node) return
+        type ShadowHost = ParentNode & { shadowRootUnl?: ShadowRoot }
+        const roots: ShadowRoot[] = []
+        function collect(node: ShadowHost) {
           if (node.shadowRootUnl) {
             roots.push(node.shadowRootUnl)
             collect(node.shadowRootUnl)
@@ -157,20 +155,19 @@ async function clickShadowCheckbox(_page: Page, frame: Frame): Promise<boolean> 
         collect(document)
         return roots
       })
-      .catch(() => null)
+      .catch(() => undefined)
 
     if (!handle) return false
 
-    const props = await handle.getProperties().catch(() => null)
+    const props = await handle.getProperties().catch(() => undefined)
     if (!props) return false
 
     for (const [, shadowHandle] of props) {
       const el = shadowHandle.asElement()
       if (!el) continue
       const checkboxHandle = await el
-        // biome-ignore lint/suspicious/noExplicitAny: shadow root handle
-        .evaluateHandle((root: any) => root.querySelector('input[type="checkbox"]'))
-        .catch(() => null)
+        .evaluateHandle((root: ParentNode) => root.querySelector('input[type="checkbox"]'))
+        .catch(() => undefined)
       if (!checkboxHandle) continue
       const checkbox = checkboxHandle.asElement()
       if (!checkbox) continue

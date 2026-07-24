@@ -68,8 +68,8 @@ export async function solveTurnstile(page: Page, timeoutMs = 25_000): Promise<bo
         // Firefox Fission isolates CF iframe in a separate process — frame DOM is inaccessible.
         // frame.frameElement() gives us the <iframe> element in the parent page, so we can
         // get its bounding box and click at the checkbox position via page mouse coordinates.
-        const frameEl = await cfFrame.frameElement().catch(() => null)
-        const box = frameEl ? await frameEl.boundingBox().catch(() => null) : null
+        const frameEl = await cfFrame.frameElement().catch(() => undefined)
+        const box = frameEl ? await frameEl.boundingBox().catch(() => undefined) : undefined
 
         if (box && box.width > 20) {
           // Checkbox is in the left portion of the Turnstile iframe (approx x+24, vertically centered).

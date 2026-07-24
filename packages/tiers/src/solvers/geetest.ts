@@ -42,7 +42,7 @@ export async function solveGeetestSlide(page: Page, timeoutMs = 30_000): Promise
     console.log("[geetest] clicking initial verify button")
     // The div has tabindex and aria-label — use page.mouse.click at its actual coordinates
     // so the browser dispatches the click to the div (not forced through a covering element).
-    const verifyBox = await verifyBtn.boundingBox().catch(() => null)
+    const verifyBox = await verifyBtn.boundingBox().catch(() => undefined)
     if (verifyBox) {
       await page.mouse.click(verifyBox.x + verifyBox.width / 2, verifyBox.y + verifyBox.height / 2)
     } else {
@@ -127,7 +127,7 @@ export async function solveGeetestSlide(page: Page, timeoutMs = 30_000): Promise
       .locator(DRAG_HANDLE_V3)
       .first()
       .boundingBox()
-      .catch(() => null)
+      .catch(() => undefined)
     if (v3Handle) {
       sliderBox = v3Handle
       console.log(
