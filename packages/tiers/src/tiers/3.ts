@@ -14,12 +14,16 @@ import {
 import { normalizeHtml } from "../utils/html"
 import { waitForImpervaResolution } from "../utils/impervaWait"
 import { isHardNetworkFailure } from "../utils/network"
+import { captureResponse, isTextContentType, type MinimalResponse } from "../utils/response"
 import type { RouteLike } from "../utils/sanitize"
 import { routeContinueOverrides } from "../utils/sanitize"
 
 export interface Tier3Result extends TierResult {
   tier: 3
   html?: string
+  body?: Uint8Array
+  responseHeaders?: Record<string, string>
+  contentType?: string
   cookies?: Cookie[]
   userAgent?: string
   statusCode?: number
@@ -53,11 +57,13 @@ export async function runTier3(
     }
 
     let statusCode = 200
-    page.on("response", (res: { url(): string; status(): number }) => {
+    const mainResponseHolder: { value?: MinimalResponse } = {}
+    page.on("response", (res: MinimalResponse) => {
       try {
         const resUrl = res.url()
         if (resUrl === url || resUrl.startsWith(url.replace(/\/$/, ""))) {
           statusCode = res.status()
+          if (!mainResponseHolder.value) mainResponseHolder.value = res
         }
       } catch {}
     })
@@ -154,11 +160,14 @@ export async function runTier3(
 
     const cookies: Cookie[] = toCookies(await freshCtx.cookies())
 
+    const captured = await captureResponse(mainResponseHolder.value)
+
     return {
       tier: 3,
       status: "success",
       durationMs: Date.now() - start,
-      html: normalizeHtml(html),
+      html: !captured.contentType || isTextContentType(captured.contentType) ? normalizeHtml(html) : "",
+      ...captured,
       cookies,
       userAgent: await page.evaluate(() => navigator.userAgent).catch(() => FINGERPRINT.userAgent),
       statusCode,

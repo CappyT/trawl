@@ -2,12 +2,20 @@ import { FINGERPRINT } from "@trawl/browser"
 import type { TierResult } from "@trawl/types"
 import { hasHcaptcha, hasRecaptcha, hasTurnstile, isBlocked, isCloudflarePage } from "../utils/detect"
 import { normalizeHtml } from "../utils/html"
+import { isTextContentType } from "../utils/response"
 
 export interface Tier1Result extends TierResult {
   tier: 1
   html?: string
+  body?: Uint8Array
+  responseHeaders?: Record<string, string>
+  contentType?: string
   statusCode?: number
 }
+
+// Methods that may carry a request body per RFC 7231/9341. CONNECT is excluded
+// (tunneling verb), TRACE/GET/HEAD/OPTIONS excluded (no body semantics).
+const METHODS_WITH_BODY = new Set(["POST", "PUT", "PATCH", "DELETE", "QUERY"])
 
 export async function runTier1(
   url: string,
@@ -17,9 +25,10 @@ export async function runTier1(
 ): Promise<Tier1Result> {
   const start = Date.now()
   try {
+    const m = (method ?? "GET").toUpperCase()
     const res = await fetch(url, {
-      method: method ?? "GET",
-      body: method === "POST" ? body : undefined,
+      method: m,
+      body: METHODS_WITH_BODY.has(m) ? body : undefined,
       headers: {
         "User-Agent": FINGERPRINT.userAgent,
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
@@ -32,14 +41,33 @@ export async function runTier1(
       redirect: "follow",
     })
 
-    const html = await res.text()
-    const headers: Record<string, string> = {}
-    res.headers.forEach((v, k) => {
-      headers[k] = v
-    })
+    // Preserve raw bytes — required for binary content (.torrent, images, etc.).
+    // The MITM proxy (:8192) consumes `body`; /scrape still consumes `html`.
+    const rawBytes = new Uint8Array(await res.arrayBuffer())
 
-    if (isCloudflarePage(html, headers)) {
-      return { tier: 1, status: "needs-js", durationMs: Date.now() - start, reason: "cloudflare-challenge" }
+    const responseHeaders: Record<string, string> = {}
+    res.headers.forEach((v, k) => {
+      responseHeaders[k] = v
+    })
+    const contentType = responseHeaders["content-type"] ?? "application/octet-stream"
+
+    // Decode a bounded preview losslessly for challenge detection — keeps the original
+    // byte buffer untouched. `fatal: false` replaces invalid sequences with U+FFFD
+    // so detection helpers don't throw on non-UTF8 payloads.
+    const previewLen = Math.min(rawBytes.length, 4096)
+    const previewText = new TextDecoder("utf-8", { fatal: false }).decode(rawBytes.subarray(0, previewLen))
+
+    if (isCloudflarePage(previewText, responseHeaders)) {
+      return {
+        tier: 1,
+        status: "needs-js",
+        durationMs: Date.now() - start,
+        reason: "cloudflare-challenge",
+        responseHeaders,
+        contentType,
+        body: rawBytes,
+        statusCode: res.status,
+      }
     }
 
     // JS-only challenges: the page's static HTML is just a shell that loads the
@@ -47,25 +75,67 @@ export async function runTier1(
     // would otherwise report success — but the real content (including the widget)
     // only renders after JS executes. Escalate so Tier 3 runs the page in a browser,
     // executes JS, and the solver can engage the actual widget.
-    if (hasHcaptcha(html)) {
-      return { tier: 1, status: "needs-js", durationMs: Date.now() - start, reason: "hcaptcha-shell" }
+    if (hasHcaptcha(previewText)) {
+      return {
+        tier: 1,
+        status: "needs-js",
+        durationMs: Date.now() - start,
+        reason: "hcaptcha-shell",
+        responseHeaders,
+        contentType,
+        body: rawBytes,
+        statusCode: res.status,
+      }
     }
-    if (hasRecaptcha(html)) {
-      return { tier: 1, status: "needs-js", durationMs: Date.now() - start, reason: "recaptcha-shell" }
+    if (hasRecaptcha(previewText)) {
+      return {
+        tier: 1,
+        status: "needs-js",
+        durationMs: Date.now() - start,
+        reason: "recaptcha-shell",
+        responseHeaders,
+        contentType,
+        body: rawBytes,
+        statusCode: res.status,
+      }
     }
-    if (hasTurnstile(html)) {
-      return { tier: 1, status: "needs-js", durationMs: Date.now() - start, reason: "turnstile-shell" }
+    if (hasTurnstile(previewText)) {
+      return {
+        tier: 1,
+        status: "needs-js",
+        durationMs: Date.now() - start,
+        reason: "turnstile-shell",
+        responseHeaders,
+        contentType,
+        body: rawBytes,
+        statusCode: res.status,
+      }
     }
 
-    if (isBlocked(res.status, html)) {
-      return { tier: 1, status: "blocked", durationMs: Date.now() - start, reason: `http-${res.status}` }
+    if (isBlocked(res.status, previewText)) {
+      return {
+        tier: 1,
+        status: "blocked",
+        durationMs: Date.now() - start,
+        reason: `http-${res.status}`,
+        responseHeaders,
+        contentType,
+        body: rawBytes,
+        statusCode: res.status,
+      }
     }
 
     return {
       tier: 1,
       status: "success",
       durationMs: Date.now() - start,
-      html: normalizeHtml(html),
+      // `html` is best-effort text view of the body — only meaningful for text-like
+      // content-types. Empty for binary payloads so /scrape consumers see the body
+      // is binary via the contentType field.
+      html: isTextContentType(contentType) ? normalizeHtml(previewText) : "",
+      body: rawBytes,
+      responseHeaders,
+      contentType,
       statusCode: res.status,
     }
   } catch (err) {

@@ -1,4 +1,4 @@
-import type { BrowserHandle } from "@trawl/browser"
+import type { BrowserHandle, PersistentBrowserContext } from "@trawl/browser"
 import { FINGERPRINT, FINGERPRINT_POOL } from "@trawl/browser"
 import type { Cookie, ScrapeRequest, ScrapeResult, SessionData, TierResult } from "@trawl/types"
 import { runTier1 } from "./tiers/1"
@@ -38,12 +38,19 @@ export function shouldFlagForRecycle(status: TierResult["status"]): boolean {
 export interface OrchestratorDeps {
   acquireBrowser(domain: string): Promise<BrowserHandle>
   releaseBrowser(id: number): void
-  loadSession(domain: string): Promise<SessionData | null>
+  loadSession(domain: string): Promise<SessionData | undefined>
   saveSession(domain: string, data: SessionData): Promise<void>
   invalidateSession(domain: string): Promise<void>
   proxyPool?: ProxyPool
   residentialProxyPool?: ProxyPool
   onTierAttempt?: (result: TierResult) => void
+  // Optional per-host persistent browser context cache. When provided, Tier 2
+  // reuses a warm context with cached `cf_clearance` cookies on repeat visits
+  // — the cookie-loading + Redis round-trip is skipped entirely.
+  acquireContext?(handleId: number, hostname: string): Promise<PersistentBrowserContext | undefined>
+  saveContext?(handleId: number, hostname: string, context: PersistentBrowserContext): Promise<void>
+  releaseContext?(handleId: number, hostname: string): void
+  invalidateContext?(hostname: string): Promise<void>
 }
 
 const extractDomain = (url: string): string => {
@@ -53,6 +60,9 @@ const extractDomain = (url: string): string => {
     return url
   }
 }
+
+const hasUsablePayload = (result: { status: TierResult["status"]; html?: string; body?: Uint8Array }): boolean =>
+  result.status === "success" && (result.body !== undefined || Boolean(result.html))
 
 export async function scrape(req: ScrapeRequest, deps: OrchestratorDeps): Promise<ScrapeResult> {
   const totalStart = Date.now()
@@ -73,13 +83,13 @@ export async function scrape(req: ScrapeRequest, deps: OrchestratorDeps): Promis
   if (!req.skipHttp && maxTier >= 1) {
     const t1 = await runTier1(req.url, sanitizedHeaders, req.method, req.body)
     emit(t1)
-    if (t1.status === "success" && t1.html !== undefined) {
+    if (hasUsablePayload(t1)) {
       // Tier 1 doesn't acquire a browser (it's a plain HTTP fetch). Use a random fingerprint
       // UA from the pool so even Tier 1 requests don't share a single signature.
       const tier1UA = FINGERPRINT_POOL[Math.floor(Math.random() * FINGERPRINT_POOL.length)].userAgent
       return {
         url: req.url,
-        html: normalizeHtml(t1.html),
+        html: normalizeHtml(t1.html ?? ""),
         cookies: [],
         userAgent: tier1UA,
         statusCode: t1.statusCode ?? 200,
@@ -88,6 +98,9 @@ export async function scrape(req: ScrapeRequest, deps: OrchestratorDeps): Promis
         timings,
         totalMs: Date.now() - totalStart,
         proxyUsed: false,
+        body: t1.body,
+        responseHeaders: t1.responseHeaders,
+        contentType: t1.contentType,
       }
     }
   }
@@ -104,9 +117,19 @@ export async function scrape(req: ScrapeRequest, deps: OrchestratorDeps): Promis
     const session = await deps.loadSession(domain)
     if (session && maxTier >= 2) {
       const remaining = maxTimeout - (Date.now() - totalStart)
-      const t2 = await runTier2(req.url, handle, session, remaining, sanitizedHeaders, req.method, req.body)
+      const t2 = await runTier2(
+        req.url,
+        handle,
+        session,
+        remaining,
+        sanitizedHeaders,
+        req.method,
+        req.body,
+        deps,
+        domain,
+      )
       emit(t2)
-      if (t2.status === "success" && t2.html !== undefined) {
+      if (hasUsablePayload(t2)) {
         if (t2.cookies && t2.cookies.length > 0) {
           await deps.saveSession(domain, {
             cookies: t2.cookies,
@@ -116,7 +139,7 @@ export async function scrape(req: ScrapeRequest, deps: OrchestratorDeps): Promis
         }
         return {
           url: req.url,
-          html: normalizeHtml(t2.html),
+          html: normalizeHtml(t2.html ?? ""),
           cookies: t2.cookies ?? [],
           userAgent: session.userAgent,
           statusCode: t2.statusCode ?? 200,
@@ -126,6 +149,9 @@ export async function scrape(req: ScrapeRequest, deps: OrchestratorDeps): Promis
           totalMs: Date.now() - totalStart,
           captchasSolved: t2.captchasSolved,
           proxyUsed: false,
+          body: t2.body,
+          responseHeaders: t2.responseHeaders,
+          contentType: t2.contentType,
         }
       }
       // Session failed — purge it
@@ -166,7 +192,7 @@ export async function scrape(req: ScrapeRequest, deps: OrchestratorDeps): Promis
       proxy3 = next
     }
     emit(t3)
-    if (t3.status === "success" && t3.html !== undefined) {
+    if (hasUsablePayload(t3)) {
       const cookies: Cookie[] = t3.cookies ?? []
       if (cookies.length > 0) {
         await deps.saveSession(domain, {
@@ -177,7 +203,7 @@ export async function scrape(req: ScrapeRequest, deps: OrchestratorDeps): Promis
       }
       return {
         url: req.url,
-        html: normalizeHtml(t3.html),
+        html: normalizeHtml(t3.html ?? ""),
         cookies,
         userAgent: t3.userAgent ?? FINGERPRINT.userAgent,
         statusCode: t3.statusCode ?? 200,
@@ -187,6 +213,9 @@ export async function scrape(req: ScrapeRequest, deps: OrchestratorDeps): Promis
         totalMs: Date.now() - totalStart,
         captchasSolved: t3.captchasSolved,
         proxyUsed: Boolean(proxy3),
+        body: t3.body,
+        responseHeaders: t3.responseHeaders,
+        contentType: t3.contentType,
       }
     }
 
@@ -225,7 +254,7 @@ export async function scrape(req: ScrapeRequest, deps: OrchestratorDeps): Promis
       proxy4 = next
     }
     emit(t4)
-    if (t4.status === "success" && t4.html !== undefined) {
+    if (hasUsablePayload(t4)) {
       const cookies: Cookie[] = t4.cookies ?? []
       if (cookies.length > 0) {
         await deps.saveSession(domain, {
@@ -236,7 +265,7 @@ export async function scrape(req: ScrapeRequest, deps: OrchestratorDeps): Promis
       }
       return {
         url: req.url,
-        html: normalizeHtml(t4.html),
+        html: normalizeHtml(t4.html ?? ""),
         cookies,
         userAgent: t4.userAgent ?? FINGERPRINT.userAgent,
         statusCode: t4.statusCode ?? 200,
@@ -246,6 +275,9 @@ export async function scrape(req: ScrapeRequest, deps: OrchestratorDeps): Promis
         totalMs: Date.now() - totalStart,
         captchasSolved: t4.captchasSolved,
         proxyUsed: true,
+        body: t4.body,
+        responseHeaders: t4.responseHeaders,
+        contentType: t4.contentType,
       }
     }
 

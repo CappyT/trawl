@@ -14,12 +14,16 @@ import {
 import { normalizeHtml } from "../utils/html"
 import { waitForImpervaResolution } from "../utils/impervaWait"
 import { isHardNetworkFailure } from "../utils/network"
+import { captureResponse, isTextContentType, type MinimalResponse } from "../utils/response"
 import type { RouteLike } from "../utils/sanitize"
 import { routeContinueOverrides } from "../utils/sanitize"
 
 export interface Tier4Result extends TierResult {
   tier: 4
   html?: string
+  body?: Uint8Array
+  responseHeaders?: Record<string, string>
+  contentType?: string
   cookies?: Cookie[]
   userAgent?: string
   statusCode?: number
@@ -41,15 +45,16 @@ export async function runTier4(
   // Proxies must be set at context creation time in Playwright — they cannot be
   // applied per-request. We create a fresh context here and close it when done,
   // leaving the pool's shared context untouched.
-  let proxyContext: Awaited<ReturnType<typeof handle.browser.newContext>> | null = null
+  const state: { proxyContext?: Awaited<ReturnType<typeof handle.browser.newContext>> } = {}
 
   try {
     // Camoufox handles fingerprinting at the C++ level — only the proxy needs to
     // be set at context creation (Playwright requires proxy at context init time).
-    proxyContext = await handle.browser.newContext({
+    const proxyContext = await handle.browser.newContext({
       proxy: { server: proxyUrl },
       viewport: null,
     })
+    state.proxyContext = proxyContext
     await proxyContext.addInitScript(() => {
       window.onerror = () => true
       window.addEventListener(
@@ -62,8 +67,7 @@ export async function runTier4(
       const _orig = Element.prototype.attachShadow
       Element.prototype.attachShadow = function (init: ShadowRootInit) {
         const r = _orig.call(this, init)
-        // biome-ignore lint/suspicious/noExplicitAny: monkeypatching Element.prototype — 'this' is HTMLElement at runtime, no TS type
-        ;(this as any).shadowRootUnl = r
+        Object.defineProperty(this, "shadowRootUnl", { configurable: true, value: r })
         return r
       }
     })
@@ -77,10 +81,12 @@ export async function runTier4(
     }
 
     let statusCode = 200
-    page.on("response", (res: { url(): string; status(): number }) => {
+    const mainResponseHolder: { value?: MinimalResponse } = {}
+    page.on("response", (res: MinimalResponse) => {
       try {
         if (res.url() === url || res.url().startsWith(url.replace(/\/$/, ""))) {
           statusCode = res.status()
+          if (!mainResponseHolder.value) mainResponseHolder.value = res
         }
       } catch {}
     })
@@ -168,11 +174,14 @@ export async function runTier4(
 
     const cookies: Cookie[] = toCookies(await proxyContext.cookies())
 
+    const captured = await captureResponse(mainResponseHolder.value)
+
     return {
       tier: 4,
       status: "success",
       durationMs: Date.now() - start,
-      html: normalizeHtml(html),
+      html: !captured.contentType || isTextContentType(captured.contentType) ? normalizeHtml(html) : "",
+      ...captured,
       cookies,
       userAgent: await page.evaluate(() => navigator.userAgent).catch(() => FINGERPRINT.userAgent),
       statusCode,
@@ -187,8 +196,8 @@ export async function runTier4(
     }
   } finally {
     // Same timeout-bounded close as tier3 — see comment there.
-    if (proxyContext) {
-      await Promise.race([proxyContext.close(), new Promise<void>((resolve) => setTimeout(resolve, 5000))]).catch(
+    if (state.proxyContext) {
+      await Promise.race([state.proxyContext.close(), new Promise<void>((resolve) => setTimeout(resolve, 5000))]).catch(
         () => {},
       )
     }
