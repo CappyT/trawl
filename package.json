@@ -12,7 +12,8 @@
     "dev:docs": "bun --cwd apps/docs dev",
     "lint": "biome lint .",
     "format": "biome format . --write",
-    "check": "biome check . --write"
+    "check": "biome check . --write",
+    "test": "bun test"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.5"
