@@ -1,40 +1,41 @@
-import { readFileSync } from "node:fs"
 import net from "node:net"
 import tls from "node:tls"
-import { detectChallengeType, isChallengeWall, type OrchestratorDeps, scrape } from "@trawl/tiers"
-import type { Cookie, SupportedMethod } from "@trawl/types"
+import {
+  isValidMethod,
+  type OrchestratorDeps,
+  proxySanitizeHeaders,
+  RESPONSE_HOP_BY_HOP_HEADERS,
+  scrape,
+} from "@trawl/tiers"
 import { MitmCa } from "./ca"
+import { ChallengeCache } from "./challengeCache"
+import { directForwardHttp, directForwardHttps, type ForwardResult } from "./directForward"
+import { responseFromScrapeResult } from "./responsePolicy"
 
-// Browser-backed MITM forward proxy.
-//
-// WHY THIS EXISTS: the FlareSolverr `/v1` contract only hands back cookies + user-agent.
-// HTTP clients that consume that contract re-fetch the target with their own HTTP stack
-// and get re-challenged on sites whose Cloudflare clearance is bound to the solving
-// browser's full connection fingerprint — the cookie alone isn't portable. This proxy
-// sidesteps that: point the client's HTTP(S) proxy at it and every request is re-issued
-// through the browser pool via scrape(), so Cloudflare sees the fingerprint it cleared.
-//
-// It is a MITM: it terminates the client's TLS using a per-host cert from our own CA
-// (ca.ts). Only expose it to trusted clients on a private interface.
+// General forward proxy with browser-backed challenge escalation. HTTPS is
+// MITM-terminated, so expose it only to clients that trust this instance's CA.
 
 const MAX_HEADER_BYTES = 64 * 1024
+
+const challengeCache = new ChallengeCache({ ttlMs: 5 * 60 * 1000 })
 
 export interface MitmProxyOptions {
   port: number
   caDir: string
   deps: OrchestratorDeps
-  // Required — caller resolves `MITM_PROXY_HOST` (or any default it wants) and passes
-  // the resolved string here. Per-host internal TLS terminators stay on 127.0.0.1.
   host: string
   maxTier?: 1 | 2 | 3 | 4
   maxTimeout?: number
   debug?: boolean
 }
 
-export function startMitmProxy(opts: MitmProxyOptions): {
+export interface MitmProxyHandle {
   ca: MitmCa
   server: net.Server
-} {
+  tlsServers: tls.Server[]
+}
+
+export function startMitmProxy(opts: MitmProxyOptions): MitmProxyHandle {
   const ca = new MitmCa(opts.caDir)
 
   // Per-host loopback TLS terminators. We know the target host from the CONNECT line, so
@@ -44,6 +45,7 @@ export function startMitmProxy(opts: MitmProxyOptions): {
   // path). On CONNECT we bridge the raw client socket to the matching server's loopback
   // port; it terminates TLS natively and hands us the decrypted stream.
   const tlsPorts = new Map<string, Promise<number>>()
+  const tlsServers: tls.Server[] = []
 
   function tlsPortFor(host: string): Promise<number> {
     const existing = tlsPorts.get(host)
@@ -54,7 +56,15 @@ export function startMitmProxy(opts: MitmProxyOptions): {
         serveRequests(tlsSocket, host, opts)
       })
       srv.on("error", reject)
-      srv.listen(0, "127.0.0.1", () => resolve((srv.address() as net.AddressInfo).port))
+      srv.listen(0, "127.0.0.1", () => {
+        const address = srv.address()
+        if (!address || typeof address === "string") {
+          reject(new Error("TLS terminator did not bind to a TCP port"))
+          return
+        }
+        tlsServers.push(srv)
+        resolve(address.port)
+      })
     })
     tlsPorts.set(host, p)
     return p
@@ -68,25 +78,39 @@ export function startMitmProxy(opts: MitmProxyOptions): {
       if (method === "CONNECT") {
         void handleConnect(clientSocket, target ?? "", tlsPortFor)
       } else {
-        // Plain-HTTP proxy request: "GET http://host/path HTTP/1.1"
-        // `first` arrives as Buffer from Bun's net.Socket 'data' event; the lib.dom.d.ts
-        // type widens it to string|Buffer for cross-runtime compatibility, but we only
-        // ever get bytes here.
-        handlePlainHttp(clientSocket, first as Buffer, opts).catch(() => clientSocket.destroy())
+        const initial = Buffer.isBuffer(first) ? first : Buffer.from(first)
+        handlePlainHttp(clientSocket, initial, opts).catch(() => clientSocket.destroy())
       }
     })
     clientSocket.on("error", () => clientSocket.destroy())
   })
 
   server.on("error", (err) => console.error("[proxy] server error:", err instanceof Error ? err.message : err))
-  // Bind to loopback by default — a MITM proxy trusts whoever installs its CA, so it must
-  // never be exposed off-host unless the operator explicitly opts in via MITM_PROXY_HOST.
-  // The per-host internal TLS terminators (above) stay on 127.0.0.1 unconditionally.
   server.listen(opts.port, opts.host, () => {
     console.log(`[proxy] MITM forward proxy on ${opts.host}:${opts.port}  (CA: ${ca.caCertPath})`)
   })
 
-  return { ca, server }
+  return { ca, server, tlsServers }
+}
+
+// Graceful shutdown — stops accepting new connections and closes existing ones.
+// Called from lifecycle.ts on SIGTERM/SIGINT before the browser pool shutdown.
+export async function shutdownMitmProxy(handle: MitmProxyHandle, timeoutMs = 5_000): Promise<void> {
+  const serverClosed = new Promise<void>((resolve) => {
+    if (!handle.server.listening) {
+      resolve()
+      return
+    }
+    handle.server.close(() => resolve())
+  })
+
+  for (const srv of handle.tlsServers) {
+    const closeAllConnections = (srv as tls.Server & { closeAllConnections?: () => void }).closeAllConnections
+    closeAllConnections?.call(srv)
+    srv.close()
+  }
+
+  await Promise.race([serverClosed, new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))])
 }
 
 // CONNECT host:port → 200, then bridge the raw client socket to the host's loopback TLS
@@ -150,227 +174,368 @@ function serveRequests(stream: tls.TLSSocket, host: string, opts: MitmProxyOptio
     if (contentLength > 0 && bodyAvailable < contentLength) return // wait for full body
 
     stream.off("data", onData)
-    const body = contentLength > 0 ? buf.subarray(bodyStart, bodyStart + contentLength).toString("utf8") : undefined
+    // Raw body bytes — UTF-8 decoding would corrupt binary uploads (PDFs, .torrent
+    // POSTs, etc.). proxyRequest() forwards them as Buffer.
+    const body = contentLength > 0 ? buf.subarray(bodyStart, bodyStart + contentLength) : undefined
     const url = `https://${headers.host ?? host}${path}`
 
-    void reissue(stream, url, method as SupportedMethod, body, opts)
+    // WebSocket upgrade: skip HTTP framing entirely, relay raw bytes between client
+    // and upstream after the 101 Switching Protocols handshake. CF bypass doesn't
+    // apply (most WS servers aren't behind CF; if they are, client retries through
+    // browser which handles WS in-page).
+    const upgradeValue = (headers.upgrade ?? "").toLowerCase()
+    if (upgradeValue.includes("websocket")) {
+      const target = new URL(`https://${headers.host ?? host}`)
+      void proxyWebSocket(stream, method, path, headers, target.hostname, target.port ? Number(target.port) : 443, true)
+      return
+    }
+
+    void proxyRequest(stream, url, method, headers, body, opts)
   }
 
   stream.on("data", onData)
 }
 
-async function reissue(
-  stream: tls.TLSSocket,
+// WebSocket relay for HTTPS-tunneled traffic (CONNECT → MITM-terminated).
+// Re-encrypts bytes via a fresh TLS connection to upstream; once the 101
+// Switching Protocols handshake completes, both sockets are raw-byte-piped
+// in both directions. Connection: close is handled by client disconnect or
+// upstream EOF.
+async function proxyWebSocket(
+  clientSocket: net.Socket,
+  method: string,
+  path: string,
+  headers: Record<string, string>,
+  host: string,
+  port: number,
+  isHttps: boolean,
+): Promise<void> {
+  const upstream = isHttps
+    ? tls.connect({ host, port, servername: host, minVersion: "TLSv1.2" })
+    : net.createConnection({ host, port })
+
+  await new Promise<void>((resolve) => {
+    const cleanup = () => {
+      try {
+        clientSocket.destroy()
+      } catch {}
+      try {
+        upstream.destroy()
+      } catch {}
+    }
+
+    upstream.once("error", () => {
+      cleanup()
+      resolve()
+    })
+    clientSocket.once("error", () => {
+      cleanup()
+      resolve()
+    })
+
+    upstream.once(isHttps ? "secureConnect" : "connect", () => {
+      // Forward the Upgrade request verbatim, minus hop-by-hop headers.
+      const requestLines = [`${method} ${path} HTTP/1.1`]
+      for (const [k, v] of Object.entries(headers)) {
+        const lower = k.toLowerCase()
+        if (RESPONSE_HOP_BY_HOP_HEADERS.has(lower)) continue
+        requestLines.push(`${k}: ${v}`)
+      }
+      requestLines.push("Connection: Upgrade", `Upgrade: ${headers.upgrade ?? "websocket"}`)
+      upstream.write(`${requestLines.join("\r\n")}\r\n\r\n`)
+
+      // Read until end of HTTP response headers (\r\n\r\n). For 101 Switching
+      // Protocols there is no body — once we see the blank line, both sides
+      // speak raw WebSocket frames.
+      const chunks: Buffer[] = []
+      let totalBytes = 0
+      const onData = (chunk: Buffer) => {
+        chunks.push(chunk)
+        totalBytes += chunk.length
+        const combined = Buffer.concat(chunks, totalBytes)
+        const headerEnd = combined.indexOf("\r\n\r\n")
+        if (headerEnd < 0) {
+          if (totalBytes > 64 * 1024) {
+            upstream.off("data", onData)
+            cleanup()
+            resolve()
+          }
+          return
+        }
+        upstream.off("data", onData)
+        // Forward the entire response (including any bytes past the header
+        // terminator — rare for 101 but defensive).
+        clientSocket.write(combined.subarray(0, headerEnd + 4))
+        if (headerEnd + 4 < combined.length) {
+          clientSocket.write(combined.subarray(headerEnd + 4))
+        }
+        // Both sides now speak raw WebSocket frames — bidirectional byte pipe.
+        upstream.pipe(clientSocket)
+        clientSocket.pipe(upstream)
+        resolve()
+      }
+      upstream.on("data", onData)
+    })
+
+    upstream.once("close", () => {
+      try {
+        clientSocket.destroy()
+      } catch {}
+      resolve()
+    })
+    clientSocket.once("close", () => {
+      try {
+        upstream.destroy()
+      } catch {}
+      resolve()
+    })
+  })
+}
+
+// New request entry point used by serveRequests. Tier 0 = direct TCP/TLS forward
+// to upstream with challenge detection. On challenge, escalate to the existing
+// tier pipeline (`scrape()` from @trawl/tiers — Tier 1 plain HTTP, Tier 2 cached
+// browser session, Tier 3 fresh CF solve, Tier 4 residential).
+//
+async function proxyRequest(
+  stream: net.Socket,
   url: string,
-  method: SupportedMethod,
-  body: string | undefined,
+  method: string,
+  clientHeaders: Record<string, string>,
+  body: Buffer | undefined,
+  opts: MitmProxyOptions,
+): Promise<void> {
+  let domain: string
+  try {
+    domain = new URL(url).hostname
+  } catch {
+    writeResponse(stream, 400, Buffer.from("bad URL"))
+    return
+  }
+
+  // Trust the cache for repeat visits — skip Tier 0 entirely if we recently saw
+  // a CF challenge here and jump straight to scrape().
+  const cachedMode = challengeCache.get(domain)
+  if (cachedMode === "cf") {
+    return await serveViaScrape(stream, url, method, clientHeaders, body, opts)
+  }
+
+  // Tier 0 performs a normal direct request. Small responses are buffered so
+  // challenge detection sees the complete HTML; only explicit video/large-file
+  // responses are returned as streams by directForward.
+  const sanitized = proxySanitizeHeaders(clientHeaders) ?? {}
+  const useHttps = url.startsWith("https://")
+  let tier0: ForwardResult
+  try {
+    if (useHttps) {
+      const parsed = new URL(url)
+      tier0 = await directForwardHttps({
+        host: parsed.hostname,
+        port: parsed.port ? Number(parsed.port) : 443,
+        method,
+        path: `${parsed.pathname}${parsed.search}`,
+        headers: sanitized,
+        body,
+        skipChallengeDetection: false,
+      })
+    } else {
+      tier0 = await directForwardHttp({
+        url,
+        method,
+        headers: sanitized,
+        body,
+        skipChallengeDetection: false,
+      })
+    }
+  } catch (err) {
+    tier0 = { mode: "error", error: err instanceof Error ? err : new Error(String(err)) }
+  }
+
+  if (tier0.mode === "error") {
+    if (opts.debug) console.log(`[proxy] Tier 0 error for ${url}: ${tier0.error.message}`)
+    return await serveViaScrape(stream, url, method, clientHeaders, body, opts)
+  }
+
+  if (tier0.mode === "stream") {
+    if (opts.debug) console.log(`[proxy] Tier 0 stream for ${url} -> ${tier0.status}`)
+    challengeCache.set(domain, "direct")
+    writeResponseFromStream(
+      stream,
+      tier0.status,
+      tier0.headers,
+      tier0.socket,
+      tier0.contentType,
+      body?.length ?? 0,
+      tier0.prefix,
+    )
+    return
+  }
+
+  if (tier0.challengeDetected) {
+    if (opts.debug) console.log(`[proxy] Tier 0 challenge for ${url} -> escalating to scrape()`)
+    challengeCache.set(domain, "cf")
+    return await serveViaScrape(stream, url, method, clientHeaders, body, opts)
+  }
+
+  challengeCache.set(domain, "direct")
+  writeResponseFromBuffer(stream, tier0.status, tier0.headers, tier0.body, tier0.contentType)
+}
+
+// Tier 1+ fallback: reissue through the existing browser-backed scrape pipeline.
+// Used when Tier 0 detects a challenge, encounters a network error, or sees the
+// domain in challengeCache as "cf".
+async function serveViaScrape(
+  stream: net.Socket,
+  url: string,
+  method: string,
+  clientHeaders: Record<string, string>,
+  body: Buffer | undefined,
   opts: MitmProxyOptions,
 ): Promise<void> {
   try {
-    const res = await fetchRaw(url, method, body, opts)
-    if (opts.debug) console.log(`[proxy] ${method} ${url} -> ${res.status} ${res.contentType} ${res.body.length}b`)
-    writeResponse(stream, res.status || 200, res.body, res.contentType)
-  } catch (err) {
-    console.error("[proxy] reissue failed for", url, err instanceof Error ? err.message : err)
-    writeResponse(stream, 502, Buffer.from(`TRAWL proxy error: ${err instanceof Error ? err.message : String(err)}`))
-  }
-}
-
-// Re-issue the request through the browser pool and return the RAW response bytes
-// (status + content-type + body). Raw bytes are essential: clients download .torrent
-// files through this proxy, and rendering them as HTML (page.content()) corrupts the
-// bencoded payload. Raw HTML is also what Cardigann-style parsers want.
-//
-// Fast path is a browser navigation reusing the domain's cached session (cf_clearance).
-// If that comes back as a Cloudflare interstitial, we rotate the proxy the same way
-// Tier 3 does (markBad → next()), retry with a fresh per-attempt context so the new
-// proxy actually applies (the pool-shared context can't be reconfigured mid-flight),
-// and only fall through to the full scrape() pipeline once proxy rotation is exhausted.
-async function fetchRaw(
-  url: string,
-  method: SupportedMethod,
-  body: string | undefined,
-  opts: MitmProxyOptions,
-): Promise<{ status: number; contentType: string; body: Buffer }> {
-  const domain = new URL(url).hostname
-  const maxTimeout = opts.maxTimeout ?? 60_000
-  const proxyPool = opts.deps.proxyPool
-
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const handle = await opts.deps.acquireBrowser(domain)
-    // Pick a fresh proxy per attempt — proxyPool.next() is sticky-per-domain until we
-    // markBad(), at which point it rotates. No pool → no proxy, just reuse handle.context.
-    const proxy = proxyPool?.next(domain) ?? undefined
-    const createdFreshCtx = Boolean(proxy)
-    const ctx = proxy
-      ? await handle.browser.newContext({
-          viewport: null,
-          proxy: { server: proxy },
-        })
-      : handle.context
-    const page = await ctx.newPage()
-    try {
-      const session = await opts.deps.loadSession(domain)
-      if (session?.cookies?.length) {
-        await ctx.addCookies(session.cookies.map(toPlaywrightCookie))
-        await page.setExtraHTTPHeaders({ "User-Agent": session.userAgent })
-      }
-      if (method !== "GET" || body !== undefined) {
-        await page.route(url, (route: { continue: (o: Record<string, unknown>) => void }) =>
-          route.continue({
-            method,
-            ...(body !== undefined ? { postData: body } : {}),
-          }),
-        )
-      }
-
-      // A .torrent (application/x-bittorrent) makes Firefox start a DOWNLOAD instead of a
-      // navigation, so page.goto aborts. Capture it via the download event and read the
-      // saved file — this still uses the real browser network (correct fingerprint +
-      // cf_clearance), just the file-download path instead of the document path.
-      let download: PlaywrightDownload | undefined
-      const downloadSeen = new Promise<void>((res) =>
-        page.once("download", (d: PlaywrightDownload) => {
-          download = d
-          res()
-        }),
+    if (!isValidMethod(method)) {
+      writeResponse(stream, 400, Buffer.from(`unsupported method: ${method}`), "text/plain; charset=utf-8")
+      return
+    }
+    const scrapeResult = await scrape(
+      {
+        url,
+        method,
+        headers: proxySanitizeHeaders(clientHeaders) ?? undefined,
+        body: body?.toString("utf8"),
+        maxTier: opts.maxTier,
+        maxTimeout: opts.maxTimeout,
+      },
+      opts.deps,
+    )
+    if (opts.debug)
+      console.log(
+        `[proxy] scrape() tier ${scrapeResult.tier} for ${url} -> ${scrapeResult.statusCode} html=${scrapeResult.html?.length ?? 0}b body=${scrapeResult.body?.length ?? 0}b`,
       )
 
-      let resp: PlaywrightResponse | null = null
-      try {
-        resp = await page.goto(url, {
-          waitUntil: "domcontentloaded",
-          timeout: maxTimeout,
-        })
-      } catch (err) {
-        // A download navigation rejects goto — wait briefly for the download event to land.
-        await Promise.race([downloadSeen, sleep(3000)])
-        if (!download) throw err
+    if (opts.debug) {
+      for (const t of scrapeResult.timings) {
+        console.log(`  tier ${t.tier}: ${t.status} (${t.durationMs}ms) ${t.reason ?? ""}`)
       }
-
-      if (download) {
-        const filePath = await download.path()
-        const buf = filePath ? readFileSync(filePath) : Buffer.alloc(0)
-        await download.delete().catch(() => {})
-        return {
-          status: 200,
-          contentType: contentTypeFor(download.suggestedFilename()),
-          body: buf,
-        }
-      }
-
-      const status: number = resp?.status() ?? 0
-      const respHeaders: Record<string, string> = resp?.headers() ?? {}
-      const contentType = respHeaders["content-type"] ?? "application/octet-stream"
-      const bodyBuf = Buffer.from((await resp?.body()) ?? new Uint8Array())
-
-      // Challenge wall detection — universal across all solvable challenge types (CF,
-      // Turnstile/hCaptcha/reCAPTCHA/GeeTest, Imperva, CAP). A "wall" is anything
-      // blocking page access (4xx/5xx, or a lean interstitial stub at 200); in-page
-      // widget captchas on accessible pages (status 200 + widget markers) are NOT walls
-      // — return the page as-is.
-      const challengeType = detectChallengeType(bodyBuf.toString("utf8", 0, 4096), respHeaders)
-      const wall = isChallengeWall(status, bodyBuf.length, challengeType)
-
-      if (wall) {
-        // Hit the wall on this IP — rotate to a fresh proxy next attempt.
-        if (proxy && proxyPool) proxyPool.markBad(proxy)
-        if (attempt === 0) {
-          // Refresh the cache so attempt 1 has solved cookies to add. Awaited (not
-          // fire-and-forget) so attempt 1 doesn't race the cache write.
-          await scrape({ url, method, body, maxTier: opts.maxTier, maxTimeout }, opts.deps).catch(() => {})
-        }
-        // attempt === 1 still walled — fall through to the final scrape() below.
-      } else {
-        // Page is reachable (or just has an in-page widget — content is the answer).
-        return { status, contentType, body: bodyBuf }
-      }
-    } finally {
-      await page.close().catch(() => {})
-      // Fresh per-attempt contexts must be closed explicitly or they leak.
-      if (createdFreshCtx) await ctx.close().catch(() => {})
-      opts.deps.releaseBrowser(handle.id)
     }
-  }
 
-  // Both raw attempts came back challenged — return whatever the solver produced as HTML.
-  const solved = await scrape({ url, method, body, maxTier: opts.maxTier, maxTimeout }, opts.deps)
-  return {
-    status: solved.statusCode || 200,
-    contentType: "text/html; charset=utf-8",
-    body: Buffer.from(solved.html),
+    // Browser tiers expose both the original navigation response and the
+    // rendered DOM. For HTML, the latter is the solved page behind the challenge.
+    // Binary responses retain their exact raw bytes.
+    const response = responseFromScrapeResult(scrapeResult)
+    if (opts.debug) {
+      console.log(
+        `[proxy] writeResponseFromBuffer status=${scrapeResult.statusCode || 200} payload=${response.body.length}b contentType=${response.contentType}`,
+      )
+    }
+    writeResponseFromBuffer(
+      stream,
+      scrapeResult.statusCode || 200,
+      response.headers,
+      response.body,
+      response.contentType,
+    )
+  } catch (err) {
+    console.error("[proxy] scrape() failed for", url, err instanceof Error ? err.message : err)
+    writeResponseFromBuffer(
+      stream,
+      502,
+      { "Content-Type": "text/plain; charset=utf-8" },
+      Buffer.from(`TRAWL proxy error: ${err instanceof Error ? err.message : String(err)}`),
+      "text/plain; charset=utf-8",
+    )
   }
 }
 
 // Minimal plain-HTTP (non-TLS) proxy support, mainly for completeness / http:// targets.
 async function handlePlainHttp(clientSocket: net.Socket, first: Buffer, opts: MitmProxyOptions): Promise<void> {
-  const headerText = first.toString("latin1")
-  const line = headerText.split("\r\n", 1)[0] ?? ""
-  const [method = "GET", absUrl = ""] = line.split(" ")
-  if (!/^https?:\/\//.test(absUrl)) {
-    clientSocket.destroy()
-    return
+  // Accumulate full HTTP headers before dispatching — needed to detect Upgrade: websocket
+  // and to know where the body starts. The first chunk from the main listener is already
+  // a complete request in most cases (curl/Chromium send headers + small body in one packet),
+  // so check the boundary inline before waiting for another 'data' event.
+  const chunks: Buffer[] = [first]
+  let total = first.length
+  let onData: ((chunk: Buffer) => void) | undefined
+
+  const tryDispatch = (): boolean => {
+    const buf = Buffer.concat(chunks, total)
+    const headerEnd = buf.indexOf("\r\n\r\n")
+    if (headerEnd < 0) {
+      if (total > MAX_HEADER_BYTES) {
+        clientSocket.destroy()
+        return true
+      }
+      return false
+    }
+
+    const headerText = buf.subarray(0, headerEnd).toString("latin1")
+    const lines = headerText.split("\r\n")
+    const [method = "GET", absUrl = ""] = (lines[0] ?? "").split(" ")
+    const headers = parseHeaders(lines.slice(1))
+
+    // WebSocket upgrade on plain HTTP (ws://): relay raw bytes between client
+    // and upstream after the 101 Switching Protocols handshake.
+    const upgradeValue = (headers.upgrade ?? "").toLowerCase()
+    if (upgradeValue.includes("websocket")) {
+      try {
+        const parsed = new URL(absUrl)
+        const isHttps = parsed.protocol === "wss:"
+        proxyWebSocket(
+          clientSocket,
+          method,
+          `${parsed.pathname}${parsed.search}`,
+          headers,
+          parsed.hostname,
+          parsed.port ? Number(parsed.port) : isHttps ? 443 : 80,
+          isHttps,
+        ).catch(() => {})
+      } catch {
+        clientSocket.destroy()
+      }
+      return true
+    }
+
+    if (!/^https?:\/\//.test(absUrl)) {
+      clientSocket.destroy()
+      return true
+    }
+
+    const contentLength = Number(headers["content-length"] ?? "0")
+    if (!Number.isSafeInteger(contentLength) || contentLength < 0) {
+      writeResponseFromBuffer(
+        clientSocket,
+        400,
+        { "content-type": "text/plain; charset=utf-8" },
+        Buffer.from("invalid Content-Length"),
+        "text/plain; charset=utf-8",
+      )
+      return true
+    }
+    if (buf.length < headerEnd + 4 + contentLength) return false
+    if (onData) clientSocket.off("data", onData)
+
+    const body = contentLength > 0 ? buf.subarray(headerEnd + 4, headerEnd + 4 + contentLength) : undefined
+    void proxyRequest(clientSocket, absUrl, method, headers, body, opts)
+    return true
   }
-  try {
-    const res = await fetchRaw(absUrl, method as SupportedMethod, undefined, opts)
-    if (opts.debug)
-      console.log(`[proxy] ${method} ${absUrl} (plain) -> ${res.status} ${res.contentType} ${res.body.length}b`)
-    writeResponse(clientSocket, res.status || 200, res.body, res.contentType)
-  } catch (err) {
-    writeResponse(
-      clientSocket,
-      502,
-      Buffer.from(`TRAWL proxy error: ${err instanceof Error ? err.message : String(err)}`),
-    )
-  }
+
+  if (tryDispatch()) return
+
+  await new Promise<void>((resolve) => {
+    onData = (chunk: Buffer) => {
+      chunks.push(chunk)
+      total += chunk.length
+      if (tryDispatch()) resolve()
+    }
+    clientSocket.on("data", onData)
+    clientSocket.once("error", () => {
+      clientSocket.destroy()
+      resolve()
+    })
+  })
 }
 
-// Minimal structural types for the Playwright objects we touch — camoufox-js doesn't
-// re-export Playwright's types (see BrowserHandle in @trawl/types), so we shape just the
-// members we call.
-interface PlaywrightResponse {
-  status(): number
-  headers(): Record<string, string>
-  body(): Promise<Buffer | Uint8Array>
-}
-interface PlaywrightDownload {
-  path(): Promise<string | null>
-  suggestedFilename(): string
-  delete(): Promise<void>
-}
-
-const sleep = (ms: number): Promise<void> => new Promise((res) => setTimeout(res, ms))
-
-// Best-effort content type from a downloaded filename — mainly so *arr clients see
-// application/x-bittorrent for .torrent files.
-function contentTypeFor(filename: string): string {
-  if (/\.torrent$/i.test(filename)) return "application/x-bittorrent"
-  if (/\.nzb$/i.test(filename)) return "application/x-nzb"
-  return "application/octet-stream"
-}
-
-// Playwright's addCookies rejects unknown sameSite spellings — map/whitelist to its enum.
-function toPlaywrightCookie(c: Cookie): Record<string, unknown> {
-  const ss = (c.sameSite ?? "").toLowerCase()
-  const sameSite = ss === "strict" ? "Strict" : ss === "lax" ? "Lax" : ss === "none" ? "None" : undefined
-  return {
-    name: c.name,
-    value: c.value,
-    domain: c.domain,
-    path: c.path,
-    expires: c.expires,
-    httpOnly: c.httpOnly,
-    secure: c.secure,
-    ...(sameSite ? { sameSite } : {}),
-  }
-}
-
-function writeResponse(
-  sock: net.Socket | tls.TLSSocket,
-  status: number,
-  body: Buffer,
-  contentType = "text/html; charset=utf-8",
-): void {
+function writeResponse(sock: net.Socket, status: number, body: Buffer, contentType = "text/html; charset=utf-8"): void {
   const head =
     `HTTP/1.1 ${status} ${reason(status)}\r\n` +
     `Content-Type: ${contentType}\r\n` +
@@ -379,6 +544,66 @@ function writeResponse(
   sock.write(head)
   sock.write(body)
   sock.end()
+}
+
+// Buffered responses preserve end-to-end headers and derive a fresh body length.
+function writeResponseFromBuffer(
+  sock: net.Socket,
+  status: number,
+  upstreamHeaders: Record<string, string>,
+  body: Buffer,
+  fallbackContentType: string,
+): void {
+  const ct = upstreamHeaders["content-type"] ?? fallbackContentType
+  const headerLines: string[] = [`HTTP/1.1 ${status} ${reason(status)}`]
+  let emittedContentType = false
+  for (const [name, value] of Object.entries(upstreamHeaders)) {
+    const lower = name.toLowerCase()
+    if (RESPONSE_HOP_BY_HOP_HEADERS.has(lower)) continue
+    if (lower === "content-length") continue
+    if (lower === "content-type") emittedContentType = true
+    headerLines.push(`${name}: ${value}`)
+  }
+  if (!emittedContentType) headerLines.push(`Content-Type: ${ct}`)
+  headerLines.push(`Content-Length: ${body.length}`)
+  headerLines.push("Connection: close")
+  sock.write(`${headerLines.join("\r\n")}\r\n\r\n`)
+  sock.write(body)
+  sock.end()
+}
+
+// Streamed responses retain upstream transfer framing.
+function writeResponseFromStream(
+  sock: net.Socket,
+  status: number,
+  upstreamHeaders: Record<string, string>,
+  upstreamSocket: net.Socket,
+  fallbackContentType: string,
+  requestBodyLength: number,
+  prefix?: Buffer,
+): void {
+  const headerLines: string[] = [`HTTP/1.1 ${status} ${reason(status)}`]
+  let emittedContentType = false
+  for (const [name, value] of Object.entries(upstreamHeaders)) {
+    const lower = name.toLowerCase()
+    // The streamed bytes retain upstream HTTP/1.1 chunk framing, so preserve
+    // Transfer-Encoding. Other hop-by-hop headers remain connection-local.
+    if (RESPONSE_HOP_BY_HOP_HEADERS.has(lower) && lower !== "transfer-encoding") continue
+    if (lower === "content-type") emittedContentType = true
+    headerLines.push(`${name}: ${value}`)
+  }
+  if (!emittedContentType) headerLines.push(`Content-Type: ${fallbackContentType}`)
+  if (requestBodyLength > 0) headerLines.push(`X-Forwarded-Body-Length: ${requestBodyLength}`)
+  headerLines.push("Connection: close")
+  // Write HTTP headers first, then prefix body bytes (which arrived in the same
+  // TCP segment as upstream's response headers), then pipe the rest of the body.
+  sock.write(`${headerLines.join("\r\n")}\r\n\r\n`)
+  if (prefix?.length) sock.write(prefix)
+  upstreamSocket.pipe(sock)
+  sock.on("error", () => upstreamSocket.destroy())
+  upstreamSocket.on("error", () => sock.destroy())
+  upstreamSocket.on("end", () => sock.end())
+  upstreamSocket.on("close", () => sock.end())
 }
 
 function parseHeaders(lines: string[]): Record<string, string> {
