@@ -33,12 +33,12 @@ describe("ProxyPool", () => {
     expect(after).toBeTruthy()
   })
 
-  test("returns null once every proxy is marked bad", () => {
+  test("returns undefined once every proxy is marked bad", () => {
     const pool = new ProxyPool(["http://p1:8080", "http://p2:8080"])
     pool.markBad("http://p1:8080")
     pool.markBad("http://p2:8080")
-    expect(pool.next("example.com")).toBeNull()
-    expect(pool.random()).toBeNull()
+    expect(pool.next("example.com")).toBeUndefined()
+    expect(pool.random()).toBeUndefined()
   })
 
   test("random() returns one of the configured proxies", () => {
@@ -49,10 +49,10 @@ describe("ProxyPool", () => {
     }
   })
 
-  test("returns null for an empty pool", () => {
+  test("returns undefined for an empty pool", () => {
     const pool = new ProxyPool([])
-    expect(pool.next()).toBeNull()
-    expect(pool.random()).toBeNull()
+    expect(pool.next()).toBeUndefined()
+    expect(pool.random()).toBeUndefined()
     expect(pool.size).toBe(0)
   })
 
@@ -74,9 +74,9 @@ describe("ProxyPool", () => {
       expect(pool?.size).toBe(3)
     })
 
-    test("returns null when neither source has any proxies", () => {
-      expect(ProxyPool.fromEnv(undefined, undefined)).toBeNull()
-      expect(ProxyPool.fromEnv("", "")).toBeNull()
+    test("returns undefined when neither source has any proxies", () => {
+      expect(ProxyPool.fromEnv()).toBeUndefined()
+      expect(ProxyPool.fromEnv("", "")).toBeUndefined()
     })
 
     test("reads proxies from a line-delimited file, ignoring comments and blank lines", () => {

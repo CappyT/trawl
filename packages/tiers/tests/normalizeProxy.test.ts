@@ -127,7 +127,7 @@ describe("normalizeProxy", () => {
     })
 
     test("non-string url field → undefined", () => {
-      expect(normalizeProxy({ url: 42 as unknown as string })).toBeUndefined()
+      expect(normalizeProxy({ url: 42 })).toBeUndefined()
     })
   })
 })
