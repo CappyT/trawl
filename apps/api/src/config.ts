@@ -17,13 +17,11 @@ export const CONTENT_PROCESSES = Number(process.env.BROWSER_CONTENT_PROCESSES ??
 // PROXY_URL / RESIDENTIAL_PROXY_URL accept a comma-separated list of proxy URLs (a single
 // URL still works — it's just a 1-element list). *_LIST_FILE is an alternative source
 // (one proxy per line) for lists too large for a single env var.
-export const proxyPool =
-  ProxyPool.fromEnv(process.env.PROXY_URL || undefined, process.env.PROXY_LIST_FILE || undefined) ?? undefined
-export const residentialProxyPool =
-  ProxyPool.fromEnv(
-    process.env.RESIDENTIAL_PROXY_URL || undefined,
-    process.env.RESIDENTIAL_PROXY_LIST_FILE || undefined,
-  ) ?? undefined
+export const proxyPool = ProxyPool.fromEnv(process.env.PROXY_URL, process.env.PROXY_LIST_FILE)
+export const residentialProxyPool = ProxyPool.fromEnv(
+  process.env.RESIDENTIAL_PROXY_URL,
+  process.env.RESIDENTIAL_PROXY_LIST_FILE,
+)
 
 // ── MITM forward-proxy mode ────────────────────────────────────────────────────
 // Optional browser-backed HTTP(S) forward proxy (apps/api/src/proxy). Off by default.
@@ -41,9 +39,9 @@ export const MITM_PROXY_HOST = process.env.MITM_PROXY_HOST ?? "0.0.0.0"
 // CA cert + key live here (persist across restarts so the CA is installed once).
 export const MITM_PROXY_CA_DIR = process.env.MITM_PROXY_CA_DIR ?? "/data/proxy-ca"
 // Cap the tier the proxy will escalate to (e.g. keep it off residential Tier 4).
-export const MITM_PROXY_MAX_TIER = process.env.MITM_PROXY_MAX_TIER
-  ? (Number(process.env.MITM_PROXY_MAX_TIER) as 1 | 2 | 3 | 4)
-  : undefined
+const configuredMaxTier = Number(process.env.MITM_PROXY_MAX_TIER)
+const isTier = (tier: number): tier is 1 | 2 | 3 | 4 => tier === 1 || tier === 2 || tier === 3 || tier === 4
+export const MITM_PROXY_MAX_TIER = isTier(configuredMaxTier) ? configuredMaxTier : undefined
 // Log one line per proxied request (method, url, status, content-type, bytes). Off by
 // default — proxied clients can be chatty. Errors are always logged.
 export const MITM_PROXY_DEBUG = /^(1|true|yes)$/i.test(process.env.MITM_PROXY_DEBUG ?? "")

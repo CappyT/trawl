@@ -11,7 +11,7 @@ import {
 } from "./config"
 import { getDeps, initPool } from "./deps"
 import { registerLifecycleHandlers } from "./lifecycle"
-import { startMitmProxy } from "./proxy/server"
+import { type MitmProxyHandle, shutdownMitmProxy, startMitmProxy } from "./proxy/server"
 import { healthRoute } from "./routes/health"
 import { indexRoute } from "./routes/index"
 import { proxyCaRoute } from "./routes/proxy-ca"
@@ -29,11 +29,13 @@ new Elysia()
   .listen(PORT)
 
 console.log(`[api] TRAWL starting on :${PORT}  (pool: ${POOL_SIZE} browser${POOL_SIZE === 1 ? "" : "s"})`)
+
+const state: { proxyHandle?: MitmProxyHandle } = {}
+
 initPool()
   .then(() => {
-    // Proxy needs a ready pool — start it only after the browsers are warm.
     if (MITM_PROXY_ENABLED) {
-      startMitmProxy({
+      state.proxyHandle = startMitmProxy({
         port: MITM_PROXY_PORT,
         host: MITM_PROXY_HOST,
         caDir: MITM_PROXY_CA_DIR,
@@ -48,4 +50,8 @@ initPool()
     process.exit(1)
   })
 
-registerLifecycleHandlers()
+registerLifecycleHandlers({
+  onShutdown: async () => {
+    if (state.proxyHandle) await shutdownMitmProxy(state.proxyHandle)
+  },
+})

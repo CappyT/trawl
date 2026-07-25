@@ -1,4 +1,6 @@
-import { BrowserPool, SessionCache } from "@trawl/browser"
+import { BrowserPool, type PersistentBrowserContext, PersistentContextCache, SessionCache } from "@trawl/browser"
+import type { OrchestratorDeps } from "@trawl/tiers"
+import type { SessionData } from "@trawl/types"
 import {
   ACQUIRE_TIMEOUT_MS,
   CONTENT_PROCESSES,
@@ -10,19 +12,17 @@ import {
   SESSION_TTL,
 } from "./config"
 
-// Single embedded pool — no BullMQ / worker process required.
-// Redis is optional: without it, session caching (Tier 2 fast path) is disabled
-// but scraping still works via Tier 1 / Tier 3.
-let pool: BrowserPool | null = null
-let sessionCache: SessionCache | null = null
+const state: {
+  pool?: BrowserPool
+  sessionCache?: SessionCache
+  persistentContextCache?: PersistentContextCache
+} = {}
 
-export function getPool(): BrowserPool | null {
-  return pool
-}
+export const getPool = () => state.pool
 
-export async function initPool() {
+export const initPool = async (): Promise<void> => {
   try {
-    sessionCache = new SessionCache({
+    state.sessionCache = new SessionCache({
       redisUrl: REDIS_URL,
       ttlSeconds: SESSION_TTL,
     })
@@ -31,29 +31,45 @@ export async function initPool() {
     console.warn("[api] session cache unavailable — Tier 2 disabled:", err instanceof Error ? err.message : err)
   }
 
-  pool = new BrowserPool({
+  state.pool = new BrowserPool({
     poolSize: POOL_SIZE,
     acquireTimeoutMs: ACQUIRE_TIMEOUT_MS,
     recycleAfterTemporaryContexts: RECYCLE_AFTER_TEMPORARY_CONTEXTS,
     contentProcesses: CONTENT_PROCESSES,
   })
-  await pool.init()
-  pool.startHealthCheck()
+  await state.pool.init()
+  state.pool.startHealthCheck()
+
+  state.persistentContextCache = new PersistentContextCache({
+    maxEntries: 20,
+    ttlMs: 10 * 60 * 1000,
+  })
+
   console.log(`[api] ready — all ${POOL_SIZE} browser${POOL_SIZE === 1 ? "" : "s"} warm`)
 }
 
-export function getDeps() {
-  if (!pool) throw new Error("pool not ready")
-  const p = pool
-  const sc = sessionCache
+export const getDeps = (): OrchestratorDeps => {
+  if (!state.pool) throw new Error("pool not ready")
+  const p = state.pool
+  const sc = state.sessionCache
+  const pcc = state.persistentContextCache
   return {
     acquireBrowser: (d: string) => p.acquire(d),
     releaseBrowser: (id: number) => p.release(id),
-    // Session cache ops are no-ops when Redis is unavailable
-    loadSession: (d: string) => (sc ? sc.load(d).catch(() => null) : Promise.resolve(null)),
-    saveSession: (d: string, data: unknown) => (sc ? sc.save(d, data as never).catch(() => {}) : Promise.resolve()),
+    loadSession: (d: string) => (sc ? sc.load(d).catch(() => undefined) : Promise.resolve(undefined)),
+    saveSession: (d: string, data: SessionData) => (sc ? sc.save(d, data).catch(() => {}) : Promise.resolve()),
     invalidateSession: (d: string) => (sc ? sc.invalidate(d).catch(() => {}) : Promise.resolve()),
     proxyPool,
     residentialProxyPool,
+    acquireContext: async (_handleId: number, hostname: string) => pcc?.get(hostname),
+    saveContext: async (handleId: number, hostname: string, context: PersistentBrowserContext) => {
+      if (pcc) pcc.set(hostname, context, handleId)
+    },
+    releaseContext: (_handleId: number, hostname: string) => {
+      pcc?.get(hostname)
+    },
+    invalidateContext: async (hostname: string) => {
+      pcc?.evict(hostname)
+    },
   }
 }

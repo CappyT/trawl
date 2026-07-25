@@ -1,6 +1,10 @@
 import { getPool } from "./deps"
 
-export function registerLifecycleHandlers(): void {
+export interface LifecycleOptions {
+  onShutdown?: () => Promise<void>
+}
+
+export const registerLifecycleHandlers = (opts: LifecycleOptions = {}): void => {
   // Camoufox (Firefox) emits page-error events in a shape playwright-core's dispatcher
   // doesn't expect for some target-page JS errors (e.g. missing `error.location`), which
   // throws inside the library's own internal event handling — outside any try/catch we
@@ -15,13 +19,18 @@ export function registerLifecycleHandlers(): void {
     console.error("[api] unhandledRejection (continuing):", reason instanceof Error ? reason.message : reason)
   })
 
-  process.on("SIGTERM", async () => {
+  const shutdown = async () => {
+    if (opts.onShutdown) {
+      try {
+        await opts.onShutdown()
+      } catch (err) {
+        console.error("[api] onShutdown error:", err instanceof Error ? err.message : err)
+      }
+    }
     await getPool()?.shutdown()
     process.exit(0)
-  })
+  }
 
-  process.on("SIGINT", async () => {
-    await getPool()?.shutdown()
-    process.exit(0)
-  })
+  process.on("SIGTERM", shutdown)
+  process.on("SIGINT", shutdown)
 }
