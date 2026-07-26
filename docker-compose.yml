@@ -7,11 +7,26 @@ services:
   trawl:
     image: ghcr.io/germondai/trawl:latest
     ports:
+      # API + FlareSolverr-compatible /v1
       - "${PORT:-8191}:8191"
+      # MITM forward proxy (:8192) — only used when MITM_PROXY_ENABLED=true.
+      # The CA cert is served from :8191/proxy-ca.crt and must be installed
+      # in each client's trust store (system keychain, Java cacerts, etc.).
+      - "${MITM_PROXY_PORT:-8192}:${MITM_PROXY_PORT:-8192}"
     shm_size: 1gb
     environment:
       REDIS_URL: redis://redis:6379
       BROWSER_POOL_SIZE: ${BROWSER_POOL_SIZE:-3}
+      # MITM proxy (off by default — opt in via .env)
+      MITM_PROXY_ENABLED: ${MITM_PROXY_ENABLED:-false}
+      MITM_PROXY_HOST: ${MITM_PROXY_HOST:-0.0.0.0}
+      MITM_PROXY_PORT: ${MITM_PROXY_PORT:-8192}
+      MITM_PROXY_CA_DIR: ${MITM_PROXY_CA_DIR:-/data/proxy-ca}
+      MITM_PROXY_MAX_TIER: ${MITM_PROXY_MAX_TIER:-4}
+      MITM_PROXY_DEBUG: ${MITM_PROXY_DEBUG:-false}
+    volumes:
+      # Persist the proxy's CA so clients don't need to re-install on every restart.
+      - trawl_proxy_ca:${MITM_PROXY_CA_DIR:-/data/proxy-ca}
     depends_on:
       - redis
     healthcheck:
@@ -23,3 +38,4 @@ services:
 
 volumes:
   redis_data:
+  trawl_proxy_ca:
