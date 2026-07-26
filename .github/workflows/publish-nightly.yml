@@ -1,28 +1,23 @@
-name: Publish
+name: Publish Nightly
 
-# Builds `:X.Y.Z` and `:latest` tags of `ghcr.io/.../trawl` from
-# `apps/api/Dockerfile` on `v*` release tag pushes. The `v` prefix is stripped
-# per Docker convention (git tag `v1.0.0` -> docker tag `1.0.0`); `:latest`
-# auto-attaches via the default `latest=auto` flavor of `type=semver`.
+# Builds the disposable `:nightly` and `:nightly-<sha>` tags of
+# `ghcr.io/.../trawl` from `apps/api/Dockerfile` on every push to `main`.
 #
-# Lives separately from publish-nightly.yml (main branch pushes) and
-# publish-baseline.yml (baseline runtime pushes). `v*-baseline` is
-# intentionally excluded so a baseline-only release doesn't also push
-# `:X.Y.Z`/`:latest` — publish-baseline.yml owns that path.
+# Lives separately from publish.yml (release builds on `v*` tags) and
+# publish-baseline.yml (baseline runtime builds on `v*`/`*-baseline` tags)
+# so:
+#   - `v*` tag pushes never trigger a nightly rebuild (release is exclusive)
+#   - main pushes never trigger a release/baseline rebuild
+#   - each workflow has its own GHA cache scope (no cross-pollution)
 #
 # Tag contract:
-#   - push `v*` -> :X.Y.Z + :latest
-#   - push `v*-baseline` -> nothing here (excluded)
-#   - push `main` -> nothing here (handled by publish-nightly.yml)
+#   - push to `main` -> :nightly-<sha> + :nightly
+#   - `:latest` is intentionally NOT touched here — that's owned by
+#     publish.yml and only moves on `v*` release pushes.
 
 on:
   push:
-    tags:
-      # Release tags — pure semver only. `v*-baseline` is intentionally excluded
-      # so a baseline-only release (e.g., `v1.0.0-baseline`) does NOT push `:X.Y.Z`
-      # or `:latest` from this workflow; publish-baseline.yml owns that path.
-      - "v*"
-      - "!v*-baseline"
+    branches: [main]
 
 env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/trawl
@@ -72,8 +67,8 @@ jobs:
           push: true
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true
-          cache-from: type=gha,scope=trawl-release-${{ matrix.platform }}
-          cache-to: type=gha,scope=trawl-release-${{ matrix.platform }},mode=max
+          cache-from: type=gha,scope=trawl-nightly-${{ matrix.platform }}
+          cache-to: type=gha,scope=trawl-nightly-${{ matrix.platform }},mode=max
           secrets: |
             GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
 
@@ -85,7 +80,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: digests-release-${{ env.PLATFORM_PAIR }}
+          name: digests-nightly-${{ env.PLATFORM_PAIR }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
@@ -101,7 +96,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: /tmp/digests
-          pattern: digests-release-*
+          pattern: digests-nightly-*
           merge-multiple: true
 
       - uses: docker/login-action@v3
@@ -117,10 +112,10 @@ jobs:
         with:
           images: ${{ env.IMAGE }}
           tags: |
-            # Versioned release tag: git tag v1.0.0 → docker tag 1.0.0 (strips the v prefix,
-            # per Docker convention; type=ref would mirror the v through). type=semver also
-            # auto-attaches :latest via the default latest=auto flavor.
-            type=semver,pattern={{version}}
+            # main branch push → :nightly (disposable test build).
+            type=raw,value=nightly
+            # main branch push → :nightly-<sha> for traceability.
+            type=sha,prefix=nightly-
 
       - name: Create and push multi-arch manifest
         working-directory: /tmp/digests
@@ -131,9 +126,11 @@ jobs:
 
       - name: Inspect manifest
         run: |
-          # Pull the first tag actually pushed by docker/metadata-action in the previous
-          # step. DOCKER_METADATA_OUTPUT_JSON.tags[] is already fully-qualified
-          # ("ghcr.io/germondai/trawl:1.0.0" / ":latest") so no $IMAGE prefix needed.
+          # Pull the first tag actually pushed by docker/metadata-action in the
+          # previous step. DOCKER_METADATA_OUTPUT_JSON.tags[] is already
+          # fully-qualified ("ghcr.io/germondai/trawl:nightly-…") so no $IMAGE
+          # prefix needed — the legacy logic re-derived from github.ref /
+          # github.sha which disagreed with what got pushed (type=sha writes
+          # short 7-char SHA but github.sha is the full 40-char hash).
           tag=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
           docker buildx imagetools inspect "$tag"
-

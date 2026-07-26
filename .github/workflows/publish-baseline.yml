@@ -7,9 +7,14 @@ name: Publish Baseline
 # Triggers:
 #   - workflow_dispatch: run manually from any branch; pick a tag via the input
 #     (default: "baseline") e.g. "baseline", "1.0.0-baseline"
-#   - push of `v*` tags (e.g., `v1.0.1`) -> docker tag derived as `1.0.1-baseline`
-#     (so cutting a release builds both `:1.0.1` and `:1.0.1-baseline` in one push)
-#   - push of `*-baseline` tags (e.g. `1.0.0-baseline`) → docker tag mirrors git tag
+#   - push of `v*` tags (e.g., `v1.0.1`) -> docker tag derived as `1.0.1-baseline`.
+#     publish.yml handles `:1.0.1`/`:latest` for the same push (it excludes
+#     `v*-baseline` so this workflow owns the baseline half of every release).
+#     This workflow also moves the rolling `:baseline` pointer.
+#   - push of `v*-baseline` or `*-baseline` tags (e.g., `v1.0.1-baseline`,
+#     `1.0.1-baseline`) -> docker tag mirrors the git tag (v stripped).
+#     publish.yml explicitly excludes `v*-baseline` so a baseline-only release
+#     does not also push `:X.Y.Z` or `:latest`. Rolling `:baseline` is moved.
 
 on:
   workflow_dispatch:
@@ -112,15 +117,18 @@ jobs:
           if [[ "${{ github.event_name }}" == "push" ]]; then
             REF="${GITHUB_REF_NAME}"
             if [[ "${REF}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              # Versioned release tag (e.g., v1.0.1) -> derive `1.0.1-baseline`
+              # Versioned release tag (e.g., v1.0.1) -> derive `1.0.1-baseline`.
+              # publish.yml handles `:1.0.1`/`:latest` for the same push.
               TAG="${REF#v}-baseline"
             elif [[ "${REF}" =~ ^v.*-baseline$ ]]; then
-              # Should never happen given trigger patterns, but guard so we
-              # never produce a literal `v1.0.1-baseline-baseline` docker tag.
-              echo "::error::Tag '${REF}' mixes both conventions. Push the bare vX.Y.Z tag - publish.yml handles :1.0.1, this workflow handles :1.0.1-baseline."
-              exit 1
+              # v-prefixed baseline tag (e.g., v1.0.1-baseline) -> strip the `v`,
+              # use the bare form. This is a baseline-only release: push ONLY
+              # `:X.Y.Z-baseline` + `:baseline`, never `:X.Y.Z`/`:latest`
+              # (publish.yml explicitly excludes `v*-baseline` so it never fires
+              # for this case, leaving the baseline path exclusive to this workflow).
+              TAG="${REF#v}"
             else
-              # Explicit baseline tag push (e.g., `1.0.1-baseline`) -> use as-is
+              # Bare baseline tag push (e.g., `1.0.1-baseline`) -> use as-is
               TAG="${REF}"
             fi
           else
