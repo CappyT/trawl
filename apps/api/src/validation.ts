@@ -5,9 +5,37 @@ import {
   SUPPORTED_METHODS,
   sanitizeHeaders,
 } from "@trawl/tiers"
-import type { ScrapeRequest } from "@trawl/types"
+import type { FlareSolverrRequest, ScrapeRequest } from "@trawl/types"
 
-export function validateScrapeRequest(req: ScrapeRequest): void {
+type RequestRecord = Record<string, unknown>
+
+function requireRequestRecord(body: unknown): asserts body is RequestRecord {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    throw new RequestValidationError("Request body must be a JSON object", 400)
+  }
+}
+
+function requireUrl(req: RequestRecord): void {
+  if (typeof req.url !== "string" || req.url.trim().length === 0) {
+    throw new RequestValidationError("url must be a non-empty string", 400)
+  }
+}
+
+export function requestUrl(body: unknown): string {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return ""
+  const url = (body as RequestRecord).url
+  return typeof url === "string" ? url : ""
+}
+
+export function validateFlareSolverrRequest(body: unknown): asserts body is FlareSolverrRequest {
+  requireRequestRecord(body)
+  requireUrl(body)
+}
+
+export function validateScrapeRequest(body: unknown): asserts body is ScrapeRequest {
+  requireRequestRecord(body)
+  requireUrl(body)
+  const req = body as RequestRecord & Partial<ScrapeRequest>
   if (!isValidMethod(req.method)) {
     throw new RequestValidationError(
       `Unsupported method: ${String(req.method)} (allowed: ${SUPPORTED_METHODS.join(", ")})`,
