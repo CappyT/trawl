@@ -1,6 +1,6 @@
 {
   "name": "@trawl/web",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "scripts": {
     "dev": "nuxt dev",
@@ -16,7 +16,7 @@
     "@takumi-rs/core": "^2.4.1",
     "@vueuse/motion": "^3.0.3",
     "nuxt": "^4.5.0",
-    "typescript": "^7.0.2",
+    "typescript": "^5.9.3",
     "vue-tsc": "^3.3.8"
   }
 }
