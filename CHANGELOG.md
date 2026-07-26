@@ -5,14 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-07-23
+
+### Added
+- **Tier 0 direct forward in the MITM proxy** (`apps/api/src/proxy/directForward.ts`): the proxy at `:8192` now forwards requests directly to upstream via raw TCP/TLS instead of spinning up a browser for every request. Pool is reserved for the requests that actually need CF bypass; Netflix/YouTube/banks/etc. flow at near-direct speed.
+- **Smart adaptive streaming** (`apps/api/src/proxy/streaming.ts`): small JSON/HTML/text responses are buffered so the challenge detector can inspect them; video/audio/binary files (`.mp4`, `.mkv`, `.m3u8`, `.zip`, `.exe`, `.dmg`, etc.) are streamed straight through to the client. Default threshold: 8 MiB.
+- **Per-hostname challenge cache** (`apps/api/src/proxy/challengeCache.ts`): the proxy remembers which hostnames recently returned Cloudflare challenges and sends repeat visits directly to the tiered solver for 5 minutes.
+- **`proxySanitizeHeaders()`** (`packages/tiers/src/utils/sanitize.ts`): permissive header sanitizer for the transparent MITM proxy — passes `Authorization`, `Cookie`, `Range`, `User-Agent`, `Referer`, and custom API tokens through, strips only RFC 7230 hop-by-hop headers.
+- **Raw bytes in `@trawl/tiers`**: `ScrapeResult` and tier results now expose `body?: Uint8Array`, `responseHeaders?: Record<string,string>`, and `contentType?: string` alongside the existing `html` field. The proxy uses these fields to preserve binary content without HTML normalization.
+- **Tier 1 method handling fix**: `runTier1()` now forwards the request body for `PUT`, `PATCH`, `DELETE`, `QUERY` (was only `POST`).
+- **Graceful proxy shutdown** (`shutdownMitmProxy()`): the API captures the proxy handle on startup and `lifecycle.ts` calls `shutdownMitmProxy()` on `SIGTERM`/`SIGINT` before the browser pool shutdown, so in-flight connections drain.
+- **MITM proxy port + CA volume in docker-compose**: `8192:8192` port mapping, `MITM_PROXY_*` env vars, and a persistent `trawl_proxy_ca` volume so the CA survives container restarts.
+- **Proxy tests**: header sanitization, response policy, adaptive streaming, challenge caching, direct HTTP forwarding, Range/206 handling, chunked responses, compressed challenge detection, and explicit media streaming.
+
+### Changed
+- `packages/types/src/index.ts` — `ScrapeResult` extended additively with optional `body`, `responseHeaders`, and `contentType`; native `/scrape` consumers should tolerate these additional fields.
+- `apps/api/src/proxy/server.ts` — `fetchRaw`/`reissue` replaced by `proxyRequest()` (Tier 0 with `scrape()` fallback) for both CONNECT-based HTTPS and plain HTTP traffic.
+- `lifecycle.ts` — `registerLifecycleHandlers()` accepts an optional `{ onShutdown }` callback.
+- `apps/api/src/index.ts` — captures the proxy handle on startup and wires it into `registerLifecycleHandlers`.
+
 ## [1.1.0] - 2026-07-22
 
 ### Added
-- **Browser-backed MITM forward-proxy mode** (`MITM_PROXY_ENABLED`, off by default): HTTP(S) forward proxy that re-issues every request through the browser pool so clients like Prowlarr / Sonarr / Jackett / JDownloader / ChangeDetection can hit fingerprint-bound Cloudflare sites (e.g. 1337x) that the `/v1` cookie-handoff can't. CA + leaf certs self-generated and persisted; CA downloadable at `GET /proxy-ca.crt`. New env: `MITM_PROXY_{ENABLED,PORT,HOST,CA_DIR,MAX_TIER,DEBUG}`.
+- **Browser-backed MITM forward-proxy mode** (`MITM_PROXY_ENABLED`, off by default): HTTP(S) forward proxy that re-issues requests through the browser pool so clients like Prowlarr, Jackett, JDownloader, and changedetection.io can hit fingerprint-bound Cloudflare sites that the `/v1` cookie handoff cannot. The generated root CA is persisted, per-host certificates are minted in memory, and the root is downloadable at `GET /proxy-ca.crt`. New env: `MITM_PROXY_{ENABLED,PORT,HOST,CA_DIR,MAX_TIER,DEBUG}`.
 
 ### Changed
 - `fetchRaw` rotates `proxyPool` on Cloudflare challenge (same `markBad → next()` pattern as Tier 3) instead of retrying on the same IP.
-- Main MITM proxy listener binds to `127.0.0.1` by default; `MITM_PROXY_HOST` env override for non-local docker-network setups.
+- Main MITM proxy listener supports a configurable bind address through `MITM_PROXY_HOST`.
 - `ci.yml` runs on PRs targeting `dev` in addition to `main`.
 - `publish.yml` inspects the actually-pushed tag from `docker/metadata-action` instead of re-deriving from `github.sha` (which previously mismatched the 7-char short SHA).
 - `node-forge ^1.3.1` runtime dep for CA + per-host leaf cert generation.
