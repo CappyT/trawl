@@ -1,11 +1,11 @@
 ---
 title: Docker Compose
-description: Run TRAWL with Docker Compose — scraper only or full stack.
+description: Run TRAWL with the supplied minimal, cached, or production Docker Compose setup.
 ---
 
 # Docker Compose
 
-Four compose files live in the repo root, matching the setups shown on the landing page.
+Three Compose files live in the repository root.
 
 ## Scraper only
 
@@ -65,32 +65,22 @@ services:
 See [Standalone Containers → Older CPUs & Synology NAS](/deployment/standalone#older-cpus-synology-nas) for how to tell if you need this, and the [README](https://github.com/germondai/trawl#docker-images-one-ghcr-package-two-tags) for the full tag comparison.
 :::
 
-## Full stack
-
-`docker-compose.full.yml` adds the landing page and docs on top of the scraper. Web and docs are built from source.
-
-```bash
-docker compose -f docker-compose.full.yml up -d
-```
-
-| Service | URL              | Description   |
-| ------- | ---------------- | ------------- |
-| `trawl` | `localhost:8191` | Scraper API   |
-| `web`   | `localhost:3000` | Landing page  |
-| `docs`  | `localhost:3001` | Documentation |
-| `redis` | internal         | Session cache |
-
-First run builds the web and docs images locally — takes a couple of minutes. Subsequent runs are fast (layers cached).
-
 ## Environment variables
 
-| Variable                         | Default              | Description                                                                |
-| -------------------------------- | -------------------- | -------------------------------------------------------------------------- |
-| `BROWSER_POOL_SIZE`              | `3`                  | Warm browser instances                                                     |
-| `BROWSER_ACQUIRE_TIMEOUT_MS`     | `15000`              | How long `acquire()` polls for a free browser before returning HTTP 429    |
-| `BROWSER_RECYCLE_AFTER_CONTEXTS` | `8`                  | Restart a browser after this many fresh/proxy contexts; set `0` to disable |
-| `REDIS_URL`                      | `redis://redis:6379` | Redis connection (set automatically in compose)                            |
-| `RESIDENTIAL_PROXY_URL`          | —                    | Enables Tier 4 proxy escalation                                            |
+| Variable                         | Default              | Description                                                             |
+| -------------------------------- | -------------------- | ----------------------------------------------------------------------- |
+| `BROWSER_POOL_SIZE`              | `3`                  | Warm browser instances                                                  |
+| `BROWSER_ACQUIRE_TIMEOUT_MS`     | `15000`              | How long `acquire()` polls for a free browser before returning HTTP 429 |
+| `BROWSER_RECYCLE_AFTER_CONTEXTS` | `8`                  | Restart after this many blocked/needs-js outcomes; set `0` to disable   |
+| `REDIS_URL`                      | `redis://redis:6379` | Redis connection (set automatically in compose)                         |
+| `RESIDENTIAL_PROXY_URL`          | —                    | Enables Tier 4 proxy escalation                                         |
+| `MITM_PROXY_ENABLED`             | `false`              | Starts the general HTTP/HTTPS proxy                                     |
+| `MITM_PROXY_PORT`                | `8192`               | Proxy listen and published port                                         |
+| `MITM_PROXY_HOST`                | `0.0.0.0`            | Proxy bind address                                                      |
+| `MITM_PROXY_CA_DIR`              | `/data/proxy-ca`     | Persistent root CA directory                                            |
+
+All supplied Compose files publish port `8192` and mount the `trawl_proxy_ca` volume. The listener
+does not start until `MITM_PROXY_ENABLED=true`. See [Proxy Configuration](/proxy/configuration).
 
 ## Logs
 

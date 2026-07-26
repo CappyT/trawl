@@ -1,0 +1,107 @@
+---
+title: Proxy Configuration
+description: Enable and configure TRAWL's challenge-bypassing HTTP/HTTPS proxy.
+---
+
+# Proxy configuration
+
+## Environment variables
+
+| Variable              | Default          | Purpose                                                  |
+| --------------------- | ---------------- | -------------------------------------------------------- |
+| `MITM_PROXY_ENABLED`  | `false`          | Starts the forward-proxy listener                        |
+| `MITM_PROXY_HOST`     | `0.0.0.0`        | Listener bind address                                    |
+| `MITM_PROXY_PORT`     | `8192`           | Listener port                                            |
+| `MITM_PROXY_CA_DIR`   | `/data/proxy-ca` | Persistent root CA certificate and private-key directory |
+| `MITM_PROXY_MAX_TIER` | `4`              | Highest solver tier available to proxy escalation        |
+| `MITM_PROXY_DEBUG`    | `false`          | Logs proxied requests and tier attempts                  |
+
+Example:
+
+```ini
+MITM_PROXY_ENABLED=true
+MITM_PROXY_HOST=127.0.0.1
+MITM_PROXY_PORT=8192
+MITM_PROXY_CA_DIR=/data/proxy-ca
+MITM_PROXY_MAX_TIER=4
+MITM_PROXY_DEBUG=false
+```
+
+Use `127.0.0.1` for a local installation. Docker clients on a bridge network normally require
+`0.0.0.0`; restrict access with container networking or a host firewall.
+
+`MITM_PROXY_MAX_TIER=3` prevents proxy requests from consuming a configured residential Tier 4
+proxy. An empty or invalid value uses the normal maximum of Tier 4.
+
+## Docker Compose
+
+The supplied Compose files publish the API and proxy ports and persist the root CA:
+
+```yaml
+services:
+  trawl:
+    ports:
+      - "8191:8191"
+      - "8192:8192"
+    environment:
+      MITM_PROXY_ENABLED: "true"
+      MITM_PROXY_HOST: 0.0.0.0
+      MITM_PROXY_PORT: 8192
+      MITM_PROXY_CA_DIR: /data/proxy-ca
+    volumes:
+      - trawl_proxy_ca:/data/proxy-ca
+
+volumes:
+  trawl_proxy_ca:
+```
+
+Start or recreate the service after changing proxy variables:
+
+```bash
+docker compose up -d --force-recreate trawl
+```
+
+## Upstream proxy interaction
+
+Tier 0 direct traffic leaves from the TRAWL host directly. `PROXY_URL` and
+`RESIDENTIAL_PROXY_URL` apply when a challenged request escalates into the scrape tiers; they do
+not turn the entire forward proxy into a chain through another proxy.
+
+The normal sticky-per-domain rotation and failure cooldown rules apply during escalation. Use
+`MITM_PROXY_MAX_TIER` to cap which tiers the forward proxy may reach.
+
+## Verify the listener
+
+Download the CA and test an HTTPS request:
+
+```bash
+curl http://127.0.0.1:8191/proxy-ca.crt -o trawl-ca.crt
+curl --proxy http://127.0.0.1:8192 \
+  --cacert ./trawl-ca.crt \
+  https://example.com/
+```
+
+Test plain HTTP:
+
+```bash
+curl --proxy http://127.0.0.1:8192 http://neverssl.com/
+```
+
+Test Range forwarding:
+
+```bash
+curl --proxy http://127.0.0.1:8192 \
+  --cacert ./trawl-ca.crt \
+  -H 'Range: bytes=0-99' \
+  -D - https://httpbin.org/range/1024
+```
+
+The Range request should return `206` and a 100-byte body when the upstream supports it.
+
+## Debug logging
+
+Set `MITM_PROXY_DEBUG=true` to log direct forwarding, streaming decisions, challenge escalation,
+winning scrape tiers, statuses, content types, and payload sizes. Disable it after troubleshooting;
+general proxy clients can generate a large volume of requests.
+
+The proxy has no authentication layer. Never publish port `8192` directly to the internet.

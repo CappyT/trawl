@@ -54,6 +54,15 @@ export default defineConfig({
         ],
       },
       {
+        text: "Forward Proxy",
+        items: [
+          { text: "Overview & Traffic Flow", link: "/proxy/overview" },
+          { text: "Configuration", link: "/proxy/configuration" },
+          { text: "Install the CA", link: "/proxy/ca-installation" },
+          { text: "Client Setup", link: "/proxy/client-setup" },
+        ],
+      },
+      {
         text: "API Reference",
         items: [
           { text: "Overview", link: "/api-reference/overview" },

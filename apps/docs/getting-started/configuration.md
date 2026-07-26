@@ -156,7 +156,8 @@ Note: `proxy` on `/v1` is a TRAWL-specific extension — it is not part of the r
 
 **Default:** `8191`
 
-Host port the Docker port mapping forwards to TRAWL's internal listener. Defaults to `8191` — the same port FlareSolverr and Byparr use, so you can swap TRAWL in without changing any *arr app settings. The container itself always listens on `8191` internally; `PORT` only changes the **host-side** port (e.g. `"${PORT:-8191}:8191"` in every compose file).
+API listener port. It defaults to `8191`, the same port used by FlareSolverr and Byparr.
+The supplied Compose files use `${PORT:-8191}` for the host side of the `8191` container mapping.
 
 To run TRAWL alongside FlareSolverr (or any other service that already binds `8191` on the host), set `PORT` in your shell or `.env` to any free port **before** running `docker compose up`:
 
@@ -165,32 +166,13 @@ PORT=9191 docker compose up -d
 # TRAWL reachable at http://localhost:9191, while port 8191 stays free for FlareSolverr.
 ```
 
-### `PORT_WEB`
+## Forward proxy
 
-**Default:** `3000`
-
-Port the Nuxt landing page listens on.
+The optional general HTTP/HTTPS proxy has its own listener, CA, tier cap, and debug settings.
+See [Proxy Configuration](/proxy/configuration) for all `MITM_PROXY_*` variables and deployment
+examples.
 
 ---
 
-## Full `.env.example`
-
-```ini
-# ── Redis ─────────────────────────────────────
-REDIS_URL=redis://localhost:6379
-
-# ── Browser pool ──────────────────────────────
-BROWSER_POOL_SIZE=3
-BROWSER_ACQUIRE_TIMEOUT_MS=15000
-SESSION_TTL_SECONDS=3600
-
-# ── Proxies (optional, comma-separated lists) ─
-PROXY_URL=
-RESIDENTIAL_PROXY_URL=
-PROXY_LIST_FILE=
-RESIDENTIAL_PROXY_LIST_FILE=
-
-# ── Ports ─────────────────────────────────────
-PORT=8191
-PORT_WEB=3000
-```
+The repository's [`.env.example`](https://github.com/germondai/trawl/blob/main/.env.example) is the
+canonical copyable environment template.
