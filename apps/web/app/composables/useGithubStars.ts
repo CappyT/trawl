@@ -12,7 +12,7 @@ export function useGithubStars() {
       if (typeof n !== "number") return
       stars.value = n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
     } catch {
-      // stays null — GitHub link still renders without the count
+      // The GitHub link still renders without the count.
     }
   })
 
