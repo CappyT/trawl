@@ -73,6 +73,7 @@ See [Standalone Containers → Older CPUs & Synology NAS](/deployment/standalone
 | `BROWSER_ACQUIRE_TIMEOUT_MS`     | `15000`              | How long `acquire()` polls for a free browser before returning HTTP 429 |
 | `BROWSER_RECYCLE_AFTER_CONTEXTS` | `8`                  | Restart after this many blocked/needs-js outcomes; set `0` to disable   |
 | `REDIS_URL`                      | `redis://redis:6379` | Redis connection (set automatically in compose)                         |
+| `PROXY_URL`                      | —                    | Optional Tier 3 datacenter proxy or pool                                |
 | `RESIDENTIAL_PROXY_URL`          | —                    | Enables Tier 4 proxy escalation                                         |
 | `MITM_PROXY_ENABLED`             | `false`              | Starts the general HTTP/HTTPS proxy                                     |
 | `MITM_PROXY_PORT`                | `8192`               | Proxy listen and published port                                         |
@@ -81,6 +82,18 @@ See [Standalone Containers → Older CPUs & Synology NAS](/deployment/standalone
 
 All supplied Compose files publish port `8192` and mount the `trawl_proxy_ca` volume. The listener
 does not start until `MITM_PROXY_ENABLED=true`. See [Proxy Configuration](/proxy/configuration).
+
+All supplied Compose files also pass `PROXY_URL`, `PROXY_LIST_FILE`, `RESIDENTIAL_PROXY_URL`, and
+`RESIDENTIAL_PROXY_LIST_FILE` from the local environment or `.env` file. For a single residential
+endpoint:
+
+```ini
+# .env
+RESIDENTIAL_PROXY_URL=http://user:pass@residential.example.com:8080
+```
+
+For supported endpoint formats, pools, and mounted list files, see
+[Configuration → Proxies](/getting-started/configuration#proxies).
 
 ## Logs
 

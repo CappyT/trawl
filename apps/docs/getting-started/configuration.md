@@ -106,10 +106,18 @@ SESSION_TTL_SECONDS=1800   # more conservative
 
 **Default:** _(empty — no proxy)_
 
-Datacenter proxy pool used for Tier 3 (fresh challenge solve). Format: `protocol://user:pass@host:port`, or a **comma-separated list** for multiple proxies:
+Datacenter proxy pool used for Tier 3 (fresh challenge solve). TRAWL passes these endpoints to the
+browser and supports HTTP and SOCKS5 forms:
 
 ```ini
+PROXY_URL=http://dc-proxy.example.com:8080
 PROXY_URL=http://user:pass@dc-proxy.example.com:8080
+PROXY_URL=socks5://dc-proxy.example.com:1080
+```
+
+HTTP credentials can be embedded in the URL. For multiple endpoints, use a comma-separated list:
+
+```ini
 PROXY_URL=http://user:pass@dc1.example.com:8080,http://user:pass@dc2.example.com:8080
 ```
 
@@ -123,7 +131,11 @@ Residential proxy pool used for Tier 4 (when the datacenter IP is flagged). Same
 
 ```ini
 RESIDENTIAL_PROXY_URL=http://user:pass@residential.example.com:8080
+RESIDENTIAL_PROXY_URL=socks5://residential.example.com:1080
 ```
+
+Provider labels such as "rotating", "sticky", "country", or "session" do not change the TRAWL
+format. Use the hostname, port, and credentials supplied by the provider.
 
 ### `PROXY_LIST_FILE` / `RESIDENTIAL_PROXY_LIST_FILE`
 
@@ -135,6 +147,35 @@ Alternative to cramming a large proxy list into `PROXY_URL`/`RESIDENTIAL_PROXY_U
 PROXY_LIST_FILE=/etc/trawl/datacenter-proxies.txt
 RESIDENTIAL_PROXY_LIST_FILE=/etc/trawl/residential-proxies.txt
 ```
+
+Example file:
+
+```text
+# /etc/trawl/residential-proxies.txt
+http://user:pass@residential-1.example.com:8080
+http://user:pass@residential-2.example.com:8080
+socks5://residential-3.example.com:1080
+```
+
+When using Docker, the path is inside the TRAWL container. Mount the file and pass the same
+in-container path:
+
+```yaml
+services:
+  trawl:
+    environment:
+      RESIDENTIAL_PROXY_LIST_FILE: /etc/trawl/residential-proxies.txt
+    volumes:
+      - ./residential-proxies.txt:/etc/trawl/residential-proxies.txt:ro
+```
+
+For a single endpoint or a short pool, a local `.env` beside `docker-compose.yml` is enough:
+
+```ini
+RESIDENTIAL_PROXY_URL=http://user:pass@residential.example.com:8080
+```
+
+The supplied Compose files pass all four proxy variables into the container.
 
 ### Rotation and failure handling
 
@@ -149,6 +190,23 @@ Both `POST /scrape` and `POST /v1` accept an optional `proxy` field in the reque
 ```
 
 Note: `proxy` on `/v1` is a TRAWL-specific extension — it is not part of the real FlareSolverr v2 contract, so other FlareSolverr-compatible clients simply won't send it.
+
+### Test an endpoint
+
+Test an HTTP proxy independently before starting TRAWL:
+
+```bash
+curl --proxy http://user:pass@proxy.example.com:8080 https://api.ipify.org
+```
+
+For SOCKS5 with proxy-side DNS resolution:
+
+```bash
+curl --proxy socks5h://proxy.example.com:1080 https://api.ipify.org
+```
+
+Use the provider's exact endpoint and authentication details. A working `curl` test confirms
+connectivity, but the destination can still reject that proxy IP during a browser challenge.
 
 ## Ports
 
