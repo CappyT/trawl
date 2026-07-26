@@ -31,6 +31,10 @@ const fetchFixture = (req: Request): Response => {
       headers: { "Content-Encoding": "gzip", "Content-Type": "text/html; charset=utf-8" },
     })
   }
+  if (pathname === "/akamai-challenge")
+    return new Response('<html><div id="sec-if-cpt-container" class="behavioral-content"></div></html>', {
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    })
   if (pathname === "/video")
     return new Response(chunked(Buffer.from([0, 1, 2, 3]), Buffer.from([4, 5, 6, 7])), {
       headers: { "Content-Type": "video/mp4" },
@@ -170,6 +174,19 @@ describe("directForwardHttp — buffered by default", () => {
     if (result.mode !== "buffer") return
     expect(result.challengeDetected).toBe(true)
     expect(result.headers["content-encoding"]).toBe("gzip")
+  })
+
+  test("detects a 200 Akamai behavioral interstitial", async () => {
+    const result = await directForwardHttp({
+      url: `${baseUrl}/akamai-challenge`,
+      method: "GET",
+      headers: {},
+    })
+
+    expect(result.mode).toBe("buffer")
+    if (result.mode !== "buffer") return
+    expect(result.status).toBe(200)
+    expect(result.challengeDetected).toBe(true)
   })
 
   test("streams explicit video responses", async () => {

@@ -119,4 +119,26 @@ describe("runTier1 — POST support", () => {
       restore()
     }
   })
+
+  test("escalates a 200 Akamai interstitial while preserving raw response metadata", async () => {
+    const html = '<html><div id="sec-if-cpt-container" class="behavioral-content"></div></html>'
+    const restore = installFetchMock(
+      () =>
+        new Response(html, {
+          status: 200,
+          headers: { "content-type": "text/html; charset=utf-8", "x-test": "akamai" },
+        }),
+    )
+    try {
+      const result = await runTier1("https://example.com/challenge")
+      expect(result.status).toBe("needs-js")
+      expect(result.reason).toBe("akamai-interstitial")
+      expect(result.statusCode).toBe(200)
+      expect(result.contentType).toBe("text/html; charset=utf-8")
+      expect(result.responseHeaders?.["x-test"]).toBe("akamai")
+      expect(new TextDecoder().decode(result.body)).toBe(html)
+    } finally {
+      restore()
+    }
+  })
 })

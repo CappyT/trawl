@@ -1,6 +1,13 @@
 import { FINGERPRINT } from "@trawl/browser"
 import type { TierResult } from "@trawl/types"
-import { hasHcaptcha, hasRecaptcha, hasTurnstile, isBlocked, isCloudflarePage } from "../utils/detect"
+import {
+  hasAkamaiChallenge,
+  hasHcaptcha,
+  hasRecaptcha,
+  hasTurnstile,
+  isBlocked,
+  isCloudflarePage,
+} from "../utils/detect"
 import { normalizeHtml } from "../utils/html"
 import { isTextContentType } from "../utils/response"
 
@@ -105,6 +112,18 @@ export async function runTier1(
         status: "needs-js",
         durationMs: Date.now() - start,
         reason: "turnstile-shell",
+        responseHeaders,
+        contentType,
+        body: rawBytes,
+        statusCode: res.status,
+      }
+    }
+    if (hasAkamaiChallenge(previewText, responseHeaders)) {
+      return {
+        tier: 1,
+        status: "needs-js",
+        durationMs: Date.now() - start,
+        reason: "akamai-interstitial",
         responseHeaders,
         contentType,
         body: rawBytes,
