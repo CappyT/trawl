@@ -7,7 +7,7 @@
 
 ## **Welcome** to <a href="https://trawl.germondai.com" target="_blank">**TRAWL**</a>! 👋
 
-Self-hosted web scraping engine that bypasses any JS challenge & captcha.\
+Self-hosted web scraping engine with best-effort JS challenge and CAPTCHA solving.\
 Support for: Cloudflare, Turnstile, Interstitial, reCAPTCHA, hCaptcha, GeeTest, Imperva (experimental).\
 Much faster and more reliable FlareSolverr & Byparr alternative and drop-in replacement for your \*arr stack.
 
@@ -16,7 +16,7 @@ Much faster and more reliable FlareSolverr & Byparr alternative and drop-in repl
 - **2-6x faster** - compared to FlareSolverr or Byparr it returns much faster with higher success rate
 - **4-tier execution** - plain HTTP fetch → cached browser session → fresh CF solve → residential proxy
 - **Native captcha solving** - CF Turnstile/Interstitial, reCAPTCHA v2 (free STT), hCaptcha, GeeTest v4 Slide
-- **Camoufox Firefox** - fingerprint-patched at the C++/Juggler level; indistinguishable from a real browser
+- **Camoufox Firefox** - fingerprint-patched at the C++/Juggler level to reduce automation signals
 - **Session cache** - bypass cookies stored in Redis; repeat requests to the same domain return in ~500ms
 - **FlareSolverr compatible** - works with Prowlarr, Jackett, Sonarr, and the full \*arr ecosystem out of the box
 - **No external APIs required** - reCAPTCHA audio transcription uses Google's free STT endpoint by default
@@ -114,13 +114,13 @@ http://localhost:8191        # running on the same host
 http://trawl:8191            # running via Docker Compose on the same network
 ```
 
-### MITM forward-proxy mode (fingerprint-bound Cloudflare, e.g. 1337x)
+### Challenge-bypassing HTTP/HTTPS proxy
 
 Some sites bind their Cloudflare clearance to the solving browser's full connection
 fingerprint. The `/v1` flow can't help there: Prowlarr keeps only the cookie + user-agent
 and **re-fetches the page with its own HTTP client**, which Cloudflare re-challenges — the
-cookie isn't portable. For those indexers, enable the browser-backed forward proxy and add
-it to Prowlarr as an **HTTP proxy** (tag it onto just the affected indexers):
+cookie isn't portable. For those indexers, enable TRAWL's forward proxy and add it to
+Prowlarr as an **HTTP proxy**:
 
 ```env
 MITM_PROXY_ENABLED=true
@@ -136,14 +136,148 @@ it; set `MITM_PROXY_HOST=127.0.0.1` to restrict it to loopback on a bare-metal h
    `curl http://<trawl-host>:8191/proxy-ca.crt` → add to the Prowlarr container's CA store
    (e.g. a linuxserver `/custom-cont-init.d` script that copies it to
    `/usr/local/share/ca-certificates/` and runs `update-ca-certificates`).
-2. Prowlarr → Settings → Indexer Proxies → **HTTP**, host `<trawl-host>`, port `8192`, give it
-   a tag, and add that tag to the CF-fingerprint-bound indexer.
+2. Prowlarr → Settings → Indexer Proxies → **HTTP**, host `<trawl-host>`, port `8192`.
+   Give it a tag if only selected indexers should use it.
 
-Every request that indexer makes (search **and** the `.torrent`/magnet grab) is then re-issued
-through the browser pool and returns the exact bytes Cloudflare served the browser.
+Ordinary requests use a direct HTTP/TLS path. Small HTML, JSON, and text responses are buffered
+for challenge detection; detected challenges escalate through the same tier pipeline as
+`POST /scrape`. Videos and large binary responses stream directly. Range requests are forwarded
+end to end and can escalate when their response is a detected challenge; WebSocket upgrades use a
+direct relay without browser escalation.
+
+See the complete [proxy documentation](./apps/docs/proxy/overview.md) for routing details,
+supported traffic, limitations, CA installation, and client examples.
 
 > ⚠️ A MITM proxy can impersonate any host to a client that trusts its CA. Only expose it on a
 > private interface (localhost / a private Docker network), never publicly.
+
+### Installing the proxy CA certificate
+
+The proxy self-generates a root CA on first run. Its certificate and private key are persisted
+under `MITM_PROXY_CA_DIR` (default `/data/proxy-ca`). Per-host certificates are minted and cached
+in memory while TRAWL runs; they do not need separate installation because they are signed by the
+persistent root. Every client that uses the proxy must trust that root. Without it, HTTPS fails with
+`ERR_CERT_AUTHORITY_INVALID` (browsers) or `PKIX path building failed` (Java).
+
+Download the CA once per client:
+
+```bash
+curl http://<trawl-host>:8191/proxy-ca.crt -o trawl-ca.crt
+# or in a Docker setup where the API isn't reachable from outside:
+docker cp trawl:/data/proxy-ca/ca.crt ./trawl-ca.crt
+```
+
+#### macOS (system keychain — affects most apps including Safari, curl, wget)
+
+```bash
+sudo security add-trusted-cert -d -r trustRoot \
+  -k /Library/Keychains/System.keychain ./trawl-ca.crt
+# Verify
+security find-certificate -c "TRAWL MITM Proxy CA"
+# Remove later
+sudo security delete-certificate -c "TRAWL MITM Proxy CA" \
+  /Library/Keychains/System.keychain
+```
+
+#### Linux (Debian/Ubuntu — system-wide for curl, wget, apt, etc.)
+
+```bash
+sudo cp trawl-ca.crt /usr/local/share/ca-certificates/trawl-ca.crt
+sudo update-ca-certificates
+# Verify
+awk '/BEGIN/{c++} c==2' /etc/ssl/certs/ca-certificates.crt | grep -c "TRAWL MITM"
+```
+
+#### Linux (RHEL/Fedora/Amazon)
+
+```bash
+sudo cp trawl-ca.crt /etc/pki/ca-trust/source/anchors/trawl-ca.crt
+sudo update-ca-trust
+```
+
+#### Firefox and NSS trust stores
+
+Firefox installations that do not use operating-system roots need a per-profile NSS import:
+
+```bash
+# Firefox 115+ uses a file-backed NSS DB; older versions use the legacy libnssdb format.
+# The certutil command is the same either way.
+certutil -A -n "TRAWL MITM" -t "CT,C,C" -i trawl-ca.crt \
+  -d sql:$HOME/.mozilla/firefox/<profile-dir>
+# Or via Firefox UI: Settings → Privacy & Security → Certificates → View Certificates →
+# Authorities → Import… → check "Trust this CA to identify websites".
+# Profile dir location: about:profiles in Firefox.
+```
+
+#### Chrome / Chromium (Linux: separate from system trust)
+
+Chrome uses the system trust store on macOS and Windows but has its own on Linux:
+
+```bash
+# Option A: launch Chrome with --user-data-dir + NSS DB update (same as Firefox).
+# Option B: use Chrome's --ignore-certificate-errors-spki-list=<hash> (per-session, less safe).
+# Option C: add the cert to the system store (above) — Chrome picks it up automatically on
+# most Linux distros via the nss-tool lookup.
+```
+
+#### Java (including JDownloader)
+
+```bash
+# Find the JRE cacerts file for your client.
+#   JDownloader:    <install>/jre/lib/security/cacerts
+keytool -importcert -alias trawl -file trawl-ca.crt \
+  -keystore "<path-to-cacerts>" -storepass changeit
+# If `keytool` reports "Certificate already exists in keystore", use -delete first:
+#   keytool -delete -alias trawl -keystore "<path-to-cacerts>" -storepass changeit
+```
+
+Prowlarr, Sonarr, and Radarr are .NET applications, not Java applications. For their
+**Docker-based installations**, add the CA to the container's Linux system trust store. A common
+LinuxServer pattern is a `/custom-cont-init.d` script:
+
+```yaml
+# In the client's Compose service:
+volumes:
+  - ./trawl-ca.crt:/config/trawl-ca.crt:ro
+  - ./install-trawl-ca.sh:/custom-cont-init.d/50-install-trawl-ca:ro
+```
+
+```bash
+#!/usr/bin/with-contenv bash
+cp /config/trawl-ca.crt /usr/local/share/ca-certificates/trawl-ca.crt
+update-ca-certificates
+```
+
+LinuxServer runs scripts in `/custom-cont-init.d/` when the container starts. Java clients such as
+JDownloader require the separate `keytool` import described above.
+
+#### JDownloader 2 (Windows / macOS / Linux — manual install)
+
+JDownloader bundles its own JRE; the CA must be imported into it.
+
+1. Find the JRE: `Settings → Advanced → Java Path` (in JDownloader) or look in the install dir:
+   - Windows: `C:\Program Files\JDownloader 2\jre\lib\security\cacerts`
+   - macOS: `/Applications/JDownloader 2.app/Contents/app/jre/lib/security/cacerts`
+   - Linux: `<install>/jre/lib/security/cacerts`
+2. Run the `keytool -importcert` command above against that file.
+3. Restart JDownloader.
+
+#### Windows (system trust store)
+
+```powershell
+# Run PowerShell as Administrator.
+Import-Certificate -FilePath .\trawl-ca.crt `
+  -CertStoreLocation Cert:\LocalMachine\Root
+# Remove later
+Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -like "*TRAWL MITM*" } | Remove-Item
+```
+
+#### Removing the CA (cleanup)
+
+Every installation method has a symmetric removal path. Search your trust store for
+`TRAWL MITM Proxy CA` (the CA's CN) and delete that entry. The CA certificate and key also live at
+`<MITM_PROXY_CA_DIR>/ca.crt` and `ca.key` on the TRAWL host. Deleting either causes TRAWL to
+generate a new root on its next start, so existing clients must install the new certificate.
 
 ## Tiers
 
@@ -173,7 +307,6 @@ Tier 4: Residential proxy ──── success ──→ cache + return (15–45
 | `docker-compose.yml`         | Scraper + Redis (default)                                |
 | `docker-compose.minimal.yml` | Scraper only, no Redis                                   |
 | `docker-compose.prod.yml`    | Production: `restart: always`, memory limit, healthcheck |
-| `docker-compose.full.yml`    | Full stack: scraper + web + docs                         |
 
 ## Docker images (one GHCR package, two tags)
 
@@ -225,12 +358,12 @@ git push origin v1.0.1
 | `RESIDENTIAL_PROXY_URL`          | —                        | Enables Tier 4 proxy escalation                                                     |
 | `STT_URL`                        | —                        | Local Whisper endpoint for reCAPTCHA (optional)                                     |
 | `PORT`                           | `8191`                   | API listen port                                                                     |
-| `MITM_PROXY_ENABLED`             | `false`                  | Enable the browser-backed MITM forward proxy (see [MITM forward-proxy mode](#mitm-forward-proxy-mode-fingerprint-bound-cloudflare-eg-1337x)) |
+| `MITM_PROXY_ENABLED`             | `false`                  | Enable the challenge-bypassing HTTP/HTTPS proxy                                     |
 | `MITM_PROXY_PORT`                | `8192`                   | Forward-proxy listen port                                                           |
 | `MITM_PROXY_HOST`                | `0.0.0.0`                | Bind address; `127.0.0.1` for loopback-only                                         |
-| `MITM_PROXY_CA_DIR`              | `/data/proxy-ca`         | Where the MITM CA + leaf certs are persisted (mount a volume)                       |
+| `MITM_PROXY_CA_DIR`              | `/data/proxy-ca`         | Persistent root CA certificate and private-key directory                            |
 | `MITM_PROXY_MAX_TIER`            | `4`                      | Cap escalation used by the proxy (e.g. `3` to stay off residential)                 |
-| `MITM_PROXY_DEBUG`               | `false`                  | Log one line per proxied request (errors are always logged)                          |
+| `MITM_PROXY_DEBUG`               | `false`                  | Log one line per proxied request (errors are always logged)                         |
 
 ## Stack
 
