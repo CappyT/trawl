@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Reject non-object request bodies and missing, non-string, or blank `url` values with HTTP 400 before scraper-tier execution (#34).
+- Recover stalled browser checkouts and bound browser close/launch operations so wedged Firefox processes cannot silently exhaust the pool (#36, #37).
+- Report HTTP 503 from `/health` whenever the browser pool has no live capacity.
 
 ## [1.2.0] - 2026-07-26
 

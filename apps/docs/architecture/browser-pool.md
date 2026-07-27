@@ -45,7 +45,10 @@ new BrowserPool({
   acquireTimeoutMs: 15000,    // BROWSER_ACQUIRE_TIMEOUT_MS — 15s default
   pollIntervalMs: 100,        // how often to re-check for an idle browser
   recycleAfterTemporaryContexts: 8,
-  contentProcesses: 2,         // BROWSER_CONTENT_PROCESSES — caps Firefox content procs
+  contentProcesses: 2,        // BROWSER_CONTENT_PROCESSES — caps Firefox content procs
+  stallAfterMs: 180000,       // BROWSER_STALL_TIMEOUT_MS
+  closeTimeoutMs: 10000,      // BROWSER_CLOSE_TIMEOUT_MS
+  launchTimeoutMs: 90000,     // BROWSER_LAUNCH_TIMEOUT_MS
 })
 ```
 
@@ -64,17 +67,9 @@ See issue #13 (original bug), #17 (recycle-on-suspect trade-off discussion), and
 
 ## Self-healing
 
-A health check runs every 30 seconds:
+A health check runs every 30 seconds. Disconnected idle browsers are relaunched in place, and checkouts that exceed the request budget plus `BROWSER_STALL_TIMEOUT_MS` are reclaimed. Lease tokens prevent a late release from an abandoned request from freeing a replacement checkout.
 
-```typescript
-for (const entry of this.entries) {
-  if (entry.busy) continue
-  const connected = entry.browser?.isConnected() ?? false
-  if (!connected) await this.restartEntry(entry)
-}
-```
-
-`browser.isConnected()` is a synchronous check. A disconnected browser is relaunched in place. `restartCount` increments so you can monitor via `/health`.
+Browser/context close and browser launch operations are bounded by `BROWSER_CLOSE_TIMEOUT_MS` and `BROWSER_LAUNCH_TIMEOUT_MS`. This keeps a wedged Firefox process from leaving a pool entry permanently stuck in restart. `/health` reports 503 when no connected, non-stalled capacity remains.
 
 ## Why Camoufox Firefox, not Chromium?
 

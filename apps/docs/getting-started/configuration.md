@@ -85,6 +85,16 @@ BROWSER_CONTENT_PROCESSES=2   # default - conservative cap, lowest RAM/CPU
 BROWSER_CONTENT_PROCESSES=4   # raise if CF/Imperva challenges stall
 ```
 
+### Browser recovery timeouts
+
+| Variable | Default | Purpose |
+| --- | ---: | --- |
+| `BROWSER_STALL_TIMEOUT_MS` | `180000` | Grace period after a request's own timeout before its browser checkout is reclaimed |
+| `BROWSER_CLOSE_TIMEOUT_MS` | `10000` | Maximum wait for a wedged browser or context to close |
+| `BROWSER_LAUNCH_TIMEOUT_MS` | `90000` | Maximum wait for Camoufox to launch |
+
+These bounds keep an unresponsive Firefox process from permanently consuming a pool slot. The defaults are suitable for most installations.
+
 ## Session Cache
 
 ### `SESSION_TTL_SECONDS`

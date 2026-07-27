@@ -46,22 +46,26 @@ Full system health check. Used by Docker Compose health checks and monitoring sy
     "busy": 1,
     "available": 4,
     "restarts": 0,
-    "avgRestarts": 0
+    "avgRestarts": 0,
+    "stalled": 0,
+    "live": 5
   }
 }
 ```
 
 | Field              | Type   | Description                              |
 | ------------------ | ------ | ---------------------------------------- |
-| `status`           | `"ok"` | Always `"ok"` when the API is reachable  |
+| `status`           | string | `"ok"` when the pool has live capacity; otherwise `"starting"` |
 | `uptime`           | number | Seconds since the API process started    |
 | `pool.total`       | number | Total browser instances in the pool      |
 | `pool.busy`        | number | Browsers currently processing a request  |
 | `pool.available`   | number | Browsers ready to accept a request       |
 | `pool.restarts`    | number | Total browser restarts since worker boot |
 | `pool.avgRestarts` | number | Average restarts per browser             |
+| `pool.stalled`     | number | Checked-out browsers past their deadline |
+| `pool.live`        | number | Connected, non-stalled browser capacity  |
 
-Pool stats are read directly from the browser pool. If the pool hasn't initialised yet, pool values will be zero.
+`/health` returns HTTP 503 while the pool is warming up or has no live browser capacity. A saturated but healthy pool remains ready because active, connected requests still count as live.
 
 ### Curl
 
@@ -82,7 +86,9 @@ Lightweight public stats for dashboards and landing pages.
   "browsers": 5,
   "available": 4,
   "busy": 1,
-  "restarts": 0
+  "restarts": 0,
+  "stalled": 0,
+  "live": 5
 }
 ```
 
@@ -92,6 +98,8 @@ Lightweight public stats for dashboards and landing pages.
 | `available` | number | Idle browsers                        |
 | `busy`      | number | Browsers in use                      |
 | `restarts`  | number | Total browser restarts since startup |
+| `stalled`   | number | Checked-out browsers past their deadline |
+| `live`      | number | Connected, non-stalled browser capacity |
 
 ### Curl
 
