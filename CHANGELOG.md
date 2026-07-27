@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Detect and resolve Akamai Bot Manager behavioral interstitials across scraper tiers and the HTTP/HTTPS proxy (#33).
+- Document supported upstream proxy formats, local Compose configuration, and residential proxy pools (#26).
 
 ### Fixed
 - Reject non-object request bodies and missing, non-string, or blank `url` values with HTTP 400 before scraper-tier execution (#34).

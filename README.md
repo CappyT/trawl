@@ -347,6 +347,26 @@ git push origin v1.0.1
 
 ## Configuration
 
+TRAWL supports HTTP proxies, authenticated HTTP proxies, and SOCKS5 proxies. The standard Compose
+files read proxy settings from the local `.env` file:
+
+```ini
+# Optional Tier 3 datacenter proxy
+PROXY_URL=http://user:pass@datacenter.example.com:8080
+
+# Optional Tier 4 residential proxy
+RESIDENTIAL_PROXY_URL=socks5://user:pass@residential.example.com:1080
+```
+
+```bash
+docker compose up -d
+```
+
+Leave either value empty to disable that proxy tier. Multiple endpoints can be separated with
+commas; larger pools can use the corresponding `*_LIST_FILE` variable. See
+[Configuration → Proxies](./apps/docs/getting-started/configuration.md#proxies)
+for pool and mounted-file examples.
+
 | Variable                         | Default                  | Description                                                                         |
 | -------------------------------- | ------------------------ | ----------------------------------------------------------------------------------- |
 | `BROWSER_POOL_SIZE`              | `3`                      | Warm Camoufox Firefox instances                                                     |
@@ -355,7 +375,10 @@ git push origin v1.0.1
 | `BROWSER_CONTENT_PROCESSES`      | `2`                      | Cap Firefox content processes per browser (`dom.ipc.processCount`); lowers RAM/CPU  |
 | `SESSION_TTL_SECONDS`            | `3600`                   | Redis session cache TTL (seconds)                                                   |
 | `REDIS_URL`                      | `redis://localhost:6379` | Redis connection string                                                             |
+| `PROXY_URL`                      | —                        | Optional Tier 3 HTTP or SOCKS5 proxy, or comma-separated pool                       |
+| `PROXY_LIST_FILE`                | —                        | File containing one Tier 3 proxy URL per line                                       |
 | `RESIDENTIAL_PROXY_URL`          | —                        | Enables Tier 4 proxy escalation                                                     |
+| `RESIDENTIAL_PROXY_LIST_FILE`    | —                        | File containing one Tier 4 proxy URL per line                                       |
 | `STT_URL`                        | —                        | Local Whisper endpoint for reCAPTCHA (optional)                                     |
 | `PORT`                           | `8191`                   | API listen port                                                                     |
 | `MITM_PROXY_ENABLED`             | `false`                  | Enable the challenge-bypassing HTTP/HTTPS proxy                                     |
