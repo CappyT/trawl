@@ -7,4 +7,5 @@ export {
 } from "./persistentContextCache"
 export type { BrowserHandle } from "./pool"
 export { BrowserPool, newFreshContext, PoolExhaustedError } from "./pool"
+export { type PlaywrightProxy, toPlaywrightProxy } from "./proxy"
 export { SessionCache } from "./session"
