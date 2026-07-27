@@ -1,5 +1,5 @@
 import type { BrowserHandle } from "@trawl/browser"
-import { FINGERPRINT } from "@trawl/browser"
+import { FINGERPRINT, newFreshContext } from "@trawl/browser"
 import type { Cookie, TierResult } from "@trawl/types"
 import { solvePageCaptchas } from "../solvers"
 import { waitForAkamaiResolution } from "../utils/akamaiWait"
@@ -47,32 +47,11 @@ export async function runTier4(
   // Proxies must be set at context creation time in Playwright — they cannot be
   // applied per-request. We create a fresh context here and close it when done,
   // leaving the pool's shared context untouched.
-  const state: { proxyContext?: Awaited<ReturnType<typeof handle.browser.newContext>> } = {}
+  const state: { proxyContext?: Awaited<ReturnType<typeof newFreshContext>> } = {}
 
   try {
-    // Camoufox handles fingerprinting at the C++ level — only the proxy needs to
-    // be set at context creation (Playwright requires proxy at context init time).
-    const proxyContext = await handle.browser.newContext({
-      proxy: { server: proxyUrl },
-      viewport: null,
-    })
+    const proxyContext = await newFreshContext(handle.browser, { proxy: proxyUrl })
     state.proxyContext = proxyContext
-    await proxyContext.addInitScript(() => {
-      window.onerror = () => true
-      window.addEventListener(
-        "unhandledrejection",
-        (e: PromiseRejectionEvent) => {
-          e.preventDefault()
-        },
-        true,
-      )
-      const _orig = Element.prototype.attachShadow
-      Element.prototype.attachShadow = function (init: ShadowRootInit) {
-        const r = _orig.call(this, init)
-        Object.defineProperty(this, "shadowRootUnl", { configurable: true, value: r })
-        return r
-      }
-    })
 
     const page = await proxyContext.newPage()
 

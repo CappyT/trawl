@@ -1,6 +1,7 @@
 import type { BrowserHandle, PoolBrowser, PoolStats } from "@trawl/types"
 import { Camoufox } from "camoufox-js"
 import { FINGERPRINT_POOL } from "./fingerprint"
+import { toPlaywrightProxy } from "./proxy"
 
 // camoufox-js wraps Playwright but doesn't re-export Browser/BrowserContext types.
 // The pool accepts any structurally-compatible browser (Playwright OR patchright) —
@@ -589,7 +590,7 @@ export class BrowserPool {
 export const newFreshContext = async (browser: any, options?: { proxy?: string }): Promise<any> => {
   const context = await browser.newContext({
     viewport: null,
-    ...(options?.proxy ? { proxy: { server: options.proxy } } : {}),
+    ...(options?.proxy ? { proxy: toPlaywrightProxy(options.proxy) } : {}),
   })
   await context.addInitScript(() => {
     window.onerror = () => true
