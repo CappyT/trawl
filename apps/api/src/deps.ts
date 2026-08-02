@@ -1,4 +1,4 @@
-import { BrowserPool, type PersistentBrowserContext, PersistentContextCache, SessionCache } from "@trawl/browser"
+import { BrowserPool, SessionCache } from "@trawl/browser"
 import type { OrchestratorDeps } from "@trawl/tiers"
 import type { SessionData } from "@trawl/types"
 import {
@@ -18,7 +18,6 @@ import {
 const state: {
   pool?: BrowserPool
   sessionCache?: SessionCache
-  persistentContextCache?: PersistentContextCache
 } = {}
 
 export const getPool = () => state.pool
@@ -46,11 +45,6 @@ export const initPool = async (): Promise<void> => {
   await state.pool.init()
   state.pool.startHealthCheck()
 
-  state.persistentContextCache = new PersistentContextCache({
-    maxEntries: 20,
-    ttlMs: 10 * 60 * 1000,
-  })
-
   console.log(`[api] ready — all ${POOL_SIZE} browser${POOL_SIZE === 1 ? "" : "s"} warm`)
 }
 
@@ -58,7 +52,6 @@ export const getDeps = (): OrchestratorDeps => {
   if (!state.pool) throw new Error("pool not ready")
   const p = state.pool
   const sc = state.sessionCache
-  const pcc = state.persistentContextCache
   return {
     acquireBrowser: (d: string, budgetMs?: number) => p.acquire(d, budgetMs),
     releaseBrowser: (id: number, lease?: number) => p.release(id, lease),
@@ -67,15 +60,5 @@ export const getDeps = (): OrchestratorDeps => {
     invalidateSession: (d: string) => (sc ? sc.invalidate(d).catch(() => {}) : Promise.resolve()),
     proxyPool,
     residentialProxyPool,
-    acquireContext: async (_handleId: number, hostname: string) => pcc?.get(hostname),
-    saveContext: async (handleId: number, hostname: string, context: PersistentBrowserContext) => {
-      if (pcc) pcc.set(hostname, context, handleId)
-    },
-    releaseContext: (_handleId: number, hostname: string) => {
-      pcc?.get(hostname)
-    },
-    invalidateContext: async (hostname: string) => {
-      pcc?.evict(hostname)
-    },
   }
 }
