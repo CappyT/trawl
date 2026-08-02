@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.0] - 2026-07-27
 
 ### Added
 - Detect and resolve Akamai Bot Manager behavioral interstitials across scraper tiers and the HTTP/HTTPS proxy (#33).
@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Recover stalled browser checkouts and bound browser close/launch operations so wedged Firefox processes cannot silently exhaust the pool (#36, #37).
 - Report HTTP 503 from `/health` whenever the browser pool has no live capacity.
 - Pass authenticated proxy credentials to Firefox separately from the proxy server URL in Tier 3 and Tier 4 (#40).
+- Record the correct architecture-specific Camoufox release metadata in API images.
+
+### Changed
+- Bump all application and internal package versions to `1.3.0`.
+- Update workspace dependencies to their latest compatible releases. TypeScript remains on 5.9 for the Nuxt app until `vue-tsc` supports TypeScript 7.
 
 ## [1.2.0] - 2026-07-26
 
