@@ -54,8 +54,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ARG TARGETARCH
 RUN --mount=type=secret,id=GITHUB_TOKEN,env=GITHUB_TOKEN \
     case "$TARGETARCH" in \
-      amd64) ZIP="camoufox-150.0.2-alpha.26-lin.x86_64.zip" ;; \
-      arm64) ZIP="camoufox-150.0.2-alpha.25-lin.arm64.zip" ;; \
+      amd64) RELEASE="alpha.26"; ZIP="camoufox-150.0.2-${RELEASE}-lin.x86_64.zip" ;; \
+      arm64) RELEASE="alpha.25"; ZIP="camoufox-150.0.2-${RELEASE}-lin.arm64.zip" ;; \
       *) echo "unsupported arch: $TARGETARCH"; exit 1 ;; \
     esac && \
     curl -fsSL \
@@ -63,7 +63,7 @@ RUN --mount=type=secret,id=GITHUB_TOKEN,env=GITHUB_TOKEN \
       -o /tmp/camoufox.zip && \
     unzip -q /tmp/camoufox.zip -d /opt/camoufox && \
     rm /tmp/camoufox.zip && \
-    printf '{"version":"150.0.2","release":"alpha.26"}\n' > /opt/camoufox/version.json && \
+    printf '{"version":"150.0.2","release":"%s"}\n' "$RELEASE" > /opt/camoufox/version.json && \
     chmod -R 755 /opt/camoufox && \
     rm -rf /opt/camoufox/fonts/macos /opt/camoufox/fonts/windows
 
