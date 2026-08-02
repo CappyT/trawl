@@ -150,8 +150,14 @@ export async function runTier1(
       durationMs: Date.now() - start,
       // `html` is best-effort text view of the body — only meaningful for text-like
       // content-types. Empty for binary payloads so /scrape consumers see the body
-      // is binary via the contentType field.
-      html: isTextContentType(contentType) ? normalizeHtml(previewText) : "",
+      // is binary via the contentType field. `previewText` is bounded to 4 KiB for
+      // challenge detection and must not be used as the response body — decode the
+      // full buffer, reusing the preview only when it already covers the whole body.
+      html: isTextContentType(contentType)
+        ? normalizeHtml(
+            rawBytes.length > previewLen ? new TextDecoder("utf-8", { fatal: false }).decode(rawBytes) : previewText,
+          )
+        : "",
       body: rawBytes,
       responseHeaders,
       contentType,
