@@ -16,10 +16,11 @@ function closeMenu() {
         <span class="brand-dot" />
       </a>
 
-      <nav class="nav-links">
+      <nav class="nav-links" aria-label="Primary navigation">
         <a href="#features" class="nav-link">features</a>
         <a href="#captcha" class="nav-link">captcha</a>
         <a href="#how-it-works" class="nav-link">tiers</a>
+        <a href="#proxy" class="nav-link">proxy</a>
         <a href="#compare" class="nav-link">benchmarks</a>
         <a href="#code" class="nav-link">quickstart</a>
         <a :href="docsUrl" class="nav-link">docs</a>
@@ -29,6 +30,7 @@ function closeMenu() {
           rel="noopener"
           class="nav-link nav-github"
           title="GitHub"
+          aria-label="TRAWL on GitHub"
         >
           <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
             <path
@@ -47,6 +49,8 @@ function closeMenu() {
           :class="{ open: menuOpen }"
           @click="menuOpen = !menuOpen"
           aria-label="Toggle menu"
+          :aria-expanded="menuOpen"
+          aria-controls="mobile-navigation"
         >
           <span /><span /><span />
         </button>
@@ -55,10 +59,11 @@ function closeMenu() {
 
     <!-- Mobile menu -->
     <Transition name="menu">
-      <div v-if="menuOpen" class="mobile-menu">
+      <nav v-show="menuOpen" id="mobile-navigation" class="mobile-menu" aria-label="Mobile navigation">
         <a href="#features" class="mobile-link" @click="closeMenu">features</a>
         <a href="#captcha" class="mobile-link" @click="closeMenu">captcha</a>
         <a href="#how-it-works" class="mobile-link" @click="closeMenu">tiers</a>
+        <a href="#proxy" class="mobile-link" @click="closeMenu">proxy</a>
         <a href="#compare" class="mobile-link" @click="closeMenu">benchmarks</a>
         <a href="#code" class="mobile-link" @click="closeMenu">quickstart</a>
         <a :href="docsUrl" class="mobile-link" @click="closeMenu" @keydown.enter="closeMenu">docs</a>
@@ -77,7 +82,7 @@ function closeMenu() {
           GitHub
           <span v-if="stars" class="mobile-github-stars">★ {{ stars }}</span>
         </a>
-      </div>
+      </nav>
     </Transition>
   </header>
 
@@ -196,7 +201,9 @@ function closeMenu() {
   display: block;
   height: 1px;
   background: var(--text-muted);
-  transition: all 0.2s;
+  transition:
+    opacity 0.2s,
+    transform 0.2s;
   transform-origin: center;
 }
 

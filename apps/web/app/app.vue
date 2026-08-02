@@ -1,37 +1,44 @@
 <script lang="ts" setup>
-useHead({
-  script: [
-    {
-      type: "application/ld+json",
-      innerHTML: JSON.stringify({
-        "@context": "https://schema.org",
-        "@type": "SoftwareApplication",
-        name: "TRAWL",
-        url: "https://trawl.dev",
-        description:
-          "Self-hosted web scraping engine with adaptive tier execution. Solves Cloudflare challenges natively. Drop-in FlareSolverr replacement.",
-        applicationCategory: "DeveloperApplication",
-        operatingSystem: "Linux, Docker",
-        license: "https://www.gnu.org/licenses/agpl-3.0.html",
-        author: { "@type": "Person", name: "germondai", url: "https://github.com/germondai" },
-        codeRepository: "https://github.com/germondai/trawl",
-        offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-      }),
+const description =
+  "Adaptive, self-hosted web scraping engine for Cloudflare, Akamai, Imperva, and CAPTCHA-protected sites, with a challenge-aware HTTP/HTTPS proxy."
+
+useSchemaOrg([
+  defineWebPage({
+    name: "TRAWL — Self-Hosted Web Scraping & Challenge Bypass",
+    description,
+  }),
+  defineSoftwareApp({
+    name: "TRAWL",
+    description,
+    applicationCategory: "DeveloperApplication",
+    operatingSystem: "Linux, Docker",
+    license: "https://www.gnu.org/licenses/agpl-3.0.html",
+    author: {
+      "@type": "Person",
+      name: "germondai",
+      url: "https://github.com/germondai",
     },
-  ],
-})
+    offers: {
+      "@type": "Offer",
+      price: 0,
+      priceCurrency: "USD",
+    },
+  }),
+])
 </script>
 
 <template>
   <div class="layout">
+    <a class="skip-link" href="#main-content">Skip to content</a>
     <NavBar />
-    <main>
+    <main id="main-content" tabindex="-1">
       <HeroSection />
       <EcosystemBanner />
       <StatsBar />
       <FeaturesGrid />
       <ChallengeGrid />
       <TierFlow />
+      <ProxySection />
       <CompareTable />
       <CtaSection />
       <CodeExample />
@@ -44,6 +51,7 @@ useHead({
 <style>
 /* ── CSS custom properties ── */
 :root {
+  color-scheme: light;
   --bg: #fafafa;
   --bg-subtle: #f4f4f5;
   --surface: #ffffff;
@@ -58,6 +66,7 @@ useHead({
 }
 
 .dark {
+  color-scheme: dark;
   --bg: #0d0d10;
   --bg-subtle: #17171b;
   --surface: #1c1c21;
@@ -103,6 +112,11 @@ button {
   font-family: inherit;
   cursor: pointer;
 }
+
+:where(a, button, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
 h1,
 h2,
 h3,
@@ -135,10 +149,41 @@ main {
   padding-top: 60px;
 }
 
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 1000;
+  padding: 8px 12px;
+  color: #080808;
+  background: var(--accent);
+  transform: translateY(-150%);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
 /* ── Shared section wrapper ── */
 .section {
   padding: 80px 0;
   border-top: 1px solid var(--border);
+}
+
+[id] {
+  scroll-margin-top: 76px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .container {
@@ -171,7 +216,11 @@ main {
   font-size: 12px;
   letter-spacing: 0.06em;
   cursor: pointer;
-  transition: all 0.15s;
+  transition:
+    color 0.15s,
+    background-color 0.15s,
+    border-color 0.15s,
+    opacity 0.15s;
   border: 1px solid transparent;
   white-space: nowrap;
 }
@@ -203,6 +252,21 @@ main {
 .page-enter-from,
 .page-leave-to {
   opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto;
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
+  }
 }
 
 /* ── Mobile globals ── */

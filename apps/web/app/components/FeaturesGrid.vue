@@ -8,6 +8,13 @@ const features = [
     desc: "Every request takes the cheapest path first — plain HTTP, then cached session, then live browser solve, then residential proxy. You pay the full browser cost only when you have to.",
   },
   {
+    icon: "⇄",
+    title: "General HTTP/HTTPS Proxy",
+    badge: "v1.2+",
+    featured: true,
+    desc: "Proxy ordinary HTTP, HTTPS, WebSockets, binary files, and Range requests through port 8192. Direct traffic stays lightweight; detected challenge pages escalate through TRAWL's solver tiers.",
+  },
+  {
     icon: "◈",
     title: "Camoufox Firefox",
     badge: "stealthy",
@@ -16,26 +23,26 @@ const features = [
   },
   {
     icon: "⟁",
-    title: "Cloudflare Bypass",
+    title: "Cloudflare + WAF Bypass",
     badge: "fastest",
-    desc: "Fresh browser context triggers CF managed-mode evaluation — solves in 4–15s vs 11–18s with alternatives. Cookies are extracted and cached immediately after the first solve.",
+    desc: "Fresh browser contexts handle Cloudflare managed mode, Akamai behavioral interstitials, and Imperva sensor flows. Solved cookies are extracted and cached immediately.",
   },
   {
     icon: "⬢",
     title: "Captcha Suite",
     badge: "auto",
-    desc: "Turnstile via shadow DOM click, reCAPTCHA v2 via Google's free audio STT, hCaptcha auto-pass, and GeeTest v4 slide via canvas gap detection. No external solver APIs. No cost per solve.",
+    desc: "Turnstile via shadow DOM click, reCAPTCHA v2 via free audio STT, hCaptcha auto-pass, and GeeTest v4 slide via canvas gap detection. No external solver APIs. No cost per solve.",
   },
   {
     icon: "⊕",
     title: "Custom Headers",
     badge: "exclusive",
-    desc: "Pass Authorization, Referer, Origin, or any header to the target. Forwarded through all four tiers — including CF challenge solving — via scoped route interception that never leaks to subresources or challenge endpoints.",
+    desc: "Pass Authorization, Referer, Origin, or any custom header through the native API. The general proxy additionally preserves browser and authenticated traffic headers while filtering unsafe hop-by-hop values.",
   },
   {
     icon: "◎",
     title: "Session Cache",
-    desc: "Cloudflare cookies are stored in Redis per domain after every successful solve. The next request returns in under 500ms — zero re-challenge. 1-hour TTL, automatically refreshed.",
+    desc: "Solved cookies and browser identity are stored in Redis per domain. Accepted sessions avoid unnecessary re-challenges and keep repeat requests fast. TTL is configurable.",
   },
   {
     icon: "▣",
@@ -59,8 +66,10 @@ const features = [
   <section id="features" class="section">
     <div class="container">
       <p class="eyebrow">capabilities</p>
-      <h2 class="section-title">built for the modern web.</h2>
-      <p class="section-sub">Every protection layer. Every captcha type. One API. Nothing hosted externally.</p>
+      <h2 class="section-title">one engine for the protected web.</h2>
+      <p class="section-sub">
+        Adaptive scraping tiers, browser-backed challenge handling, embedded CAPTCHA flows, and a general-purpose proxy.
+      </p>
 
       <div class="features-grid">
         <div
@@ -149,6 +158,16 @@ const features = [
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+@media (min-width: 901px) {
+  .feature-card:last-child:nth-child(3n + 1) {
+    grid-column: 1 / -1;
+  }
+
+  .feature-card:last-child:nth-child(3n + 1) .feature-body {
+    max-width: 720px;
+  }
 }
 
 .feature-title {

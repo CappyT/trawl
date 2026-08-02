@@ -19,7 +19,7 @@ const apps = [
           >{{ app.name }}</span
         >
       </div>
-      <span class="eco-label">— plug in, zero config changes</span>
+      <span class="eco-label">— connect with a single URL change</span>
     </div>
   </div>
 </template>

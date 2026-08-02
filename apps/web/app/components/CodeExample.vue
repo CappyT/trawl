@@ -39,7 +39,7 @@ curl -s -X POST http://localhost:8191/scrape \\
 <span class="kw">const</span> { solution } = <span class="kw">await</span> res.json()
 
 console.log(solution.response)  <span class="c">// full HTML</span>
-console.log(solution.cookies)   <span class="c">// Cloudflare cookies</span>
+console.log(solution.cookies)   <span class="c">// solved session cookies</span>
 console.log(solution.userAgent) <span class="c">// browser UA used</span>`,
 
   python: `<span class="kw">import</span> requests
@@ -105,21 +105,23 @@ curl -s -X POST http://localhost:8191/scrape \\
         :visible-once="{ opacity: 1, y: 0, transition: { duration: 400 } }"
         class="code-block"
       >
-        <div class="tabs">
+        <fieldset class="tabs">
+          <legend class="sr-only">API example language</legend>
           <button
             type="button"
             v-for="tab in tabs"
             :key="tab.id"
             class="tab"
             :class="{ active: active === tab.id }"
+            :aria-pressed="active === tab.id"
             @click="active = tab.id"
           >
             {{ tab.label }}
           </button>
           <div class="tab-spacer" />
           <span class="tab-hint">POST /v1 · FlareSolverr v2 compat</span>
-        </div>
-        <pre class="code-body"><code v-html="code[active]" /></pre>
+        </fieldset>
+        <pre class="code-body" aria-live="polite"><code v-html="code[active]" /></pre>
       </div>
     </div>
   </section>
@@ -140,6 +142,10 @@ curl -s -X POST http://localhost:8191/scrape \\
 }
 
 .tabs {
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
   display: flex;
   align-items: center;
   border-bottom: 1px solid var(--border);
@@ -158,7 +164,10 @@ curl -s -X POST http://localhost:8191/scrape \\
   border-right: 1px solid var(--border);
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.12s;
+  transition:
+    color 0.12s,
+    background-color 0.12s,
+    border-color 0.12s;
 }
 
 .tab:hover {

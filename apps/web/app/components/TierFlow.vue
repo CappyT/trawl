@@ -12,21 +12,21 @@ const tiers = [
     name: "Cached Browser Session",
     time: "~500ms",
     tag: "redis hit",
-    desc: "Restores Cloudflare cookies from Redis into a warm pooled browser and navigates. No challenge re-solve. Returns the page in under a second. Stays cached for 1 hour.",
+    desc: "Restores solved cookies from Redis into a warm pooled browser. No challenge re-solve while the target accepts the session. Returns the page in under a second. Cache TTL is configurable.",
   },
   {
     num: "03",
-    name: "Live Cloudflare Solve",
+    name: "Live Challenge Solve",
     time: "4–15s",
     tag: "fresh context",
-    desc: "A fresh browser context triggers CF managed-mode — the fastest possible challenge path. Turnstile, reCAPTCHA, hCaptcha, and GeeTest are solved automatically. Cookies are cached on success.",
+    desc: "A fresh Camoufox context runs the matching Cloudflare, Akamai, or Imperva flow. Turnstile, reCAPTCHA, hCaptcha, and GeeTest are solved automatically when encountered. Cookies are cached on success.",
   },
   {
     num: "04",
     name: "Residential Proxy",
     time: "8–25s",
     tag: "optional",
-    desc: "Same as Tier 3 but routes through a residential proxy. Only triggered when the datacenter IP is reputation-flagged by Cloudflare. Bandwidth cost is incurred only when truly necessary.",
+    desc: "Same as Tier 3 but routed through a residential proxy. Only triggered after the direct or datacenter path fails, so paid residential bandwidth is used only when necessary.",
   },
 ]
 </script>

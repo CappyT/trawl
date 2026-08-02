@@ -1,7 +1,17 @@
+const title = "Self-Hosted Web Scraping & Challenge Bypass"
+const description =
+  "Adaptive, self-hosted web scraping engine for Cloudflare, Akamai, Imperva, and CAPTCHA-protected sites, with a challenge-aware HTTP/HTTPS proxy."
+const socialDescription =
+  "Scrape protected websites with adaptive HTTP and browser tiers, CAPTCHA handling, session caching, and a challenge-aware proxy."
+
 export default defineNuxtConfig({
   compatibilityDate: "2026-06-23",
 
   modules: ["@nuxt/fonts", "@nuxtjs/color-mode", "@nuxtjs/seo", "@vueuse/motion/nuxt"],
+
+  alias: {
+    tslib: "tslib/tslib.es6.js",
+  },
 
   colorMode: {
     classSuffix: "",
@@ -14,7 +24,8 @@ export default defineNuxtConfig({
       {
         name: "Geist Mono",
         provider: "google",
-        weights: ["300", "400", "500", "600", "700"],
+        weights: ["400", "500", "600", "700"],
+        subsets: ["latin"],
       },
     ],
   },
@@ -22,54 +33,66 @@ export default defineNuxtConfig({
   site: {
     url: "https://trawl.dev",
     name: "TRAWL",
-    description:
-      "Self-hosted web scraping engine with adaptive tier execution. Solves Cloudflare challenges natively in 4–15s. Returns cached results in under 500ms. Drop-in FlareSolverr replacement for Prowlarr, Jackett, Sonarr, and Radarr.",
+    description,
     defaultLocale: "en",
+  },
+
+  seo: {
+    meta: {
+      description,
+      themeColor: "#00e87a",
+      ogType: "website",
+      ogTitle: `TRAWL — ${title}`,
+      ogDescription: socialDescription,
+      twitterCard: "summary_large_image",
+      twitterTitle: `TRAWL — ${title}`,
+      twitterDescription:
+        "An adaptive web scraping engine for protected sites, with CAPTCHA handling and a general HTTP/HTTPS proxy.",
+    },
+  },
+
+  ogImage: {
+    enabled: false,
+  },
+
+  robots: {
+    credits: false,
+  },
+
+  sitemap: {
+    zeroRuntime: true,
+  },
+
+  nitro: {
+    compressPublicAssets: true,
+    routeRules: {
+      "/**": {
+        headers: {
+          "Content-Security-Policy":
+            "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' https://api.github.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+          "Cache-Control": "public, max-age=0, must-revalidate",
+          "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+          "Referrer-Policy": "strict-origin-when-cross-origin",
+          "X-Content-Type-Options": "nosniff",
+          "X-Frame-Options": "DENY",
+        },
+      },
+      "/_nuxt/**": {
+        headers: {
+          "Cache-Control": "public, max-age=31536000, immutable",
+        },
+      },
+    },
   },
 
   app: {
     head: {
-      title: "TRAWL — Adaptive Web Scraping Engine",
+      title,
       templateParams: {
         siteName: "TRAWL",
         separator: "—",
       },
-      meta: [
-        { charset: "utf-8" },
-        { name: "viewport", content: "width=device-width, initial-scale=1" },
-        { name: "theme-color", content: "#00e87a" },
-        { name: "robots", content: "index, follow" },
-        {
-          name: "keywords",
-          content:
-            "cloudflare bypass, web scraping, flaresolver replacement, self-hosted scraper, browser automation, captcha solver, prowlarr, jackett, *arr",
-        },
-        { property: "og:type", content: "website" },
-        {
-          property: "og:title",
-          content: "TRAWL — Adaptive Web Scraping Engine",
-        },
-        {
-          property: "og:description",
-          content:
-            "Solve Cloudflare challenges natively. Return cached results in <500ms. Self-hosted, zero external APIs, FlareSolverr-compatible.",
-        },
-        { property: "og:url", content: "https://trawl.dev" },
-        { name: "twitter:card", content: "summary" },
-        {
-          name: "twitter:title",
-          content: "TRAWL — Adaptive Web Scraping Engine",
-        },
-        {
-          name: "twitter:description",
-          content:
-            "Self-hosted scraping engine. Cloudflare bypass, captcha solving, session caching. Drop-in FlareSolverr replacement.",
-        },
-      ],
-      link: [
-        { rel: "canonical", href: "https://trawl.dev" },
-        { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
-      ],
+      link: [{ rel: "icon", type: "image/svg+xml", href: "/favicon.svg" }],
     },
   },
 })

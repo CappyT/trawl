@@ -7,7 +7,8 @@ function toggleTheme() {
 }
 
 function scrollToTop() {
-  window.scrollTo({ top: 0, behavior: "smooth" })
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  window.scrollTo({ top: 0, behavior: reducedMotion ? "auto" : "smooth" })
 }
 
 function onScroll() {
@@ -24,10 +25,11 @@ onUnmounted(() => window.removeEventListener("scroll", onScroll))
     class="float-btn float-theme"
     :class="{ raised: showScrollTop }"
     :title="colorMode.value === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
+    :aria-label="colorMode.value === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
     @click="toggleTheme"
   >
-    <span v-if="colorMode.value === 'dark'">☀</span>
-    <span v-else>◐</span>
+    <span v-if="colorMode.value === 'dark'" aria-hidden="true">☀</span>
+    <span v-else aria-hidden="true">◐</span>
   </button>
 
   <Transition name="slide-up">
@@ -36,6 +38,7 @@ onUnmounted(() => window.removeEventListener("scroll", onScroll))
       v-if="showScrollTop"
       class="float-btn float-scroll"
       title="Scroll to top"
+      aria-label="Scroll to top"
       @click="scrollToTop"
     >
       ↑

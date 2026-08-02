@@ -21,6 +21,26 @@ const challenges = [
     byparrSupport: "no",
   },
   {
+    name: "Akamai Bot Manager",
+    desc: "Behavioral interstitial + press-and-hold",
+    trawl: "sensor flow · human-like input",
+    trawlSupport: "yes",
+    flaresolver: "not handled",
+    fsSupport: "no",
+    byparr: "not handled",
+    byparrSupport: "no",
+  },
+  {
+    name: "Imperva / Incapsula",
+    desc: "Sensor-cookie WAF challenge",
+    trawl: "browser sensor flow · best effort",
+    trawlSupport: "partial",
+    flaresolver: "not handled",
+    fsSupport: "no",
+    byparr: "not handled",
+    byparrSupport: "no",
+  },
+  {
     name: "reCAPTCHA v2",
     desc: "Google checkbox + audio challenge",
     trawl: "Google STT audio · free",
@@ -74,14 +94,17 @@ function iconClass(s: string) {
   <section id="captcha" class="section">
     <div class="container">
       <p class="eyebrow">challenge coverage</p>
-      <h2 class="section-title">every wall. handled.</h2>
+      <h2 class="section-title">solve more than Cloudflare.</h2>
       <p class="section-sub">
-        TRAWL is the only self-hosted scraper with native solvers for all major protection layers — not just Cloudflare
-        interstitials, but the captchas embedded inside the pages themselves.
+        Native flows cover Cloudflare, Akamai, Imperva, and the captchas embedded inside protected pages — all within
+        the same self-hosted tier engine.
       </p>
 
       <div class="table-wrap">
         <table>
+          <caption class="sr-only">
+            Challenge handling support across TRAWL, FlareSolverr, and Byparr
+          </caption>
           <thead>
             <tr>
               <th class="col-name">challenge type</th>
@@ -97,7 +120,7 @@ function iconClass(s: string) {
                 <span class="challenge-desc">{{ c.desc }}</span>
               </td>
               <td class="col-trawl">
-                <span class="cell-yes">✓</span>
+                <span :class="iconClass(c.trawlSupport)">{{ icon(c.trawlSupport) }}</span>
                 {{ c.trawl }}
               </td>
               <td>
@@ -114,16 +137,16 @@ function iconClass(s: string) {
             <tr>
               <td class="col-name score-spacer"></td>
               <td class="col-trawl score-cell">
-                <span class="score-num accent">6 / 6</span>
-                <span class="score-label">challenge types</span>
+                <span class="score-num accent">8</span>
+                <span class="score-label">challenge paths</span>
               </td>
               <td class="score-cell">
-                <span class="score-num">1 / 6</span>
-                <span class="score-label">challenge types</span>
+                <span class="score-num">1</span>
+                <span class="score-label">dedicated path</span>
               </td>
               <td class="score-cell">
-                <span class="score-num">1 / 6</span>
-                <span class="score-label">challenge types</span>
+                <span class="score-num">1</span>
+                <span class="score-label">dedicated path</span>
               </td>
             </tr>
           </tfoot>

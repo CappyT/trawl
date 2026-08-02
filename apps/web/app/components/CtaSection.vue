@@ -22,8 +22,8 @@ const tabs: { id: Tab; label: string; hint: string }[] = [
         class="cta-inner"
       >
         <div class="cta-label">open source · AGPL-3.0 · self-hosted</div>
-        <h2 class="cta-heading">up and running<br />in 60 seconds.</h2>
-        <p class="cta-sub">No clone. No build. Pull the image and start.</p>
+        <h2 class="cta-heading">scrape protected sites<br />in 60 seconds.</h2>
+        <p class="cta-sub">No clone. No build. Pull the Docker image and send your first request.</p>
         <div class="cta-actions">
           <a href="https://github.com/germondai/trawl" target="_blank" rel="noopener noreferrer" class="btn-primary">
             <span class="btn-icon">↗</span>
@@ -35,18 +35,20 @@ const tabs: { id: Tab; label: string; hint: string }[] = [
         <!-- Step 1: Setup -->
         <div class="step-label">1 — choose your setup</div>
         <div class="cta-snippet">
-          <div class="setup-tabs">
+          <fieldset class="setup-tabs">
+            <legend class="sr-only">Installation method</legend>
             <button
               type="button"
               v-for="tab in tabs"
               :key="tab.id"
               class="setup-tab"
               :class="{ active: active === tab.id }"
+              :aria-pressed="active === tab.id"
               @click="active = tab.id"
             >
               {{ tab.label }}
             </button>
-          </div>
+          </fieldset>
 
           <div v-if="active === 'docker'" class="snippet-body-wrap">
             <div class="snippet-bar inner-bar">
@@ -61,64 +63,85 @@ const tabs: { id: Tab; label: string; hint: string }[] = [
 
           <div v-else-if="active === 'minimal'" class="snippet-body-wrap">
             <div class="snippet-bar inner-bar">
-              <span class="snippet-hint">single service · pool size 1 · 15s acquire wait · no redis</span>
+              <span class="snippet-hint">docker-compose.minimal.yml · single service · no redis</span>
             </div>
             <pre class="snippet-body"><code><span class="k">services:</span>
   trawl:
     <span class="k">image:</span> <span class="s">ghcr.io/germondai/trawl:latest</span>
-    <span class="k">ports:</span> [<span class="s">"8191:8191"</span>]
+    <span class="k">ports:</span>
+      - <span class="s">"${PORT:-8191}:8191"</span>
+      - <span class="s">"${MITM_PROXY_PORT:-8192}:${MITM_PROXY_PORT:-8192}"</span>
     <span class="k">shm_size:</span> <span class="s">1gb</span>
     <span class="k">environment:</span>
       <span class="k">BROWSER_POOL_SIZE:</span> <span class="s">1</span>
-      <span class="k">BROWSER_ACQUIRE_TIMEOUT_MS:</span> <span class="s">15000</span></code></pre>
+      <span class="k">MITM_PROXY_ENABLED:</span> <span class="s">${MITM_PROXY_ENABLED:-false}</span>
+      <span class="k">MITM_PROXY_CA_DIR:</span> <span class="s">/data/proxy-ca</span>
+    <span class="k">volumes:</span>
+      - <span class="s">trawl_proxy_ca:/data/proxy-ca</span>
+    <span class="k">healthcheck:</span>
+      <span class="k">test:</span> [<span class="s">"CMD"</span>, <span class="s">"curl"</span>, <span class="s">"-sf"</span>, <span class="s">"http://localhost:8191/health"</span>]
+<span class="k">volumes:</span>
+  trawl_proxy_ca:</code></pre>
           </div>
 
           <div v-else-if="active === 'cached'" class="snippet-body-wrap">
             <div class="snippet-bar inner-bar">
-              <span class="snippet-hint">redis session cache · repeat requests ~500ms</span>
+              <span class="snippet-hint">docker-compose.yml · redis cache · pool size 1</span>
             </div>
             <pre class="snippet-body"><code><span class="k">services:</span>
   redis:
-    <span class="k">image:</span> <span class="s">redis:7-alpine</span>
+    <span class="k">image:</span> <span class="s">redis:8.8-alpine</span>
     <span class="k">volumes:</span> [<span class="s">redis_data:/data</span>]
   trawl:
     <span class="k">image:</span> <span class="s">ghcr.io/germondai/trawl:latest</span>
-    <span class="k">ports:</span> [<span class="s">"8191:8191"</span>]
+    <span class="k">ports:</span>
+      - <span class="s">"${PORT:-8191}:8191"</span>
+      - <span class="s">"${MITM_PROXY_PORT:-8192}:${MITM_PROXY_PORT:-8192}"</span>
     <span class="k">shm_size:</span> <span class="s">1gb</span>
     <span class="k">environment:</span>
       <span class="k">REDIS_URL:</span> <span class="s">redis://redis:6379</span>
-      <span class="k">BROWSER_POOL_SIZE:</span> <span class="s">3</span>
-      <span class="k">BROWSER_ACQUIRE_TIMEOUT_MS:</span> <span class="s">15000</span>
+      <span class="k">BROWSER_POOL_SIZE:</span> <span class="s">${BROWSER_POOL_SIZE:-1}</span>
+      <span class="k">MITM_PROXY_ENABLED:</span> <span class="s">${MITM_PROXY_ENABLED:-false}</span>
+      <span class="k">MITM_PROXY_CA_DIR:</span> <span class="s">/data/proxy-ca</span>
+    <span class="k">volumes:</span>
+      - <span class="s">trawl_proxy_ca:/data/proxy-ca</span>
     <span class="k">depends_on:</span> [<span class="s">redis</span>]
 <span class="k">volumes:</span>
-  redis_data:</code></pre>
+  redis_data:
+  trawl_proxy_ca:</code></pre>
           </div>
 
           <div v-else-if="active === 'production'" class="snippet-body-wrap">
             <div class="snippet-bar inner-bar">
-              <span class="snippet-hint">auto-restart · memory limit · healthcheck</span>
+              <span class="snippet-hint">docker-compose.prod.yml · pool size 3 · restart + healthcheck</span>
             </div>
             <pre class="snippet-body"><code><span class="k">services:</span>
   redis:
-    <span class="k">image:</span> <span class="s">redis:7-alpine</span>
+    <span class="k">image:</span> <span class="s">redis:8.8-alpine</span>
     <span class="k">restart:</span> <span class="s">always</span>
     <span class="k">volumes:</span> [<span class="s">redis_data:/data</span>]
   trawl:
     <span class="k">image:</span> <span class="s">ghcr.io/germondai/trawl:latest</span>
     <span class="k">restart:</span> <span class="s">always</span>
-    <span class="k">ports:</span> [<span class="s">"8191:8191"</span>]
+    <span class="k">ports:</span>
+      - <span class="s">"${PORT:-8191}:8191"</span>
+      - <span class="s">"${MITM_PROXY_PORT:-8192}:${MITM_PROXY_PORT:-8192}"</span>
     <span class="k">shm_size:</span> <span class="s">1gb</span>
     <span class="k">mem_limit:</span> <span class="s">3g</span>
     <span class="k">environment:</span>
       <span class="k">REDIS_URL:</span> <span class="s">redis://redis:6379</span>
-      <span class="k">BROWSER_POOL_SIZE:</span> <span class="s">5</span>
-      <span class="k">BROWSER_ACQUIRE_TIMEOUT_MS:</span> <span class="s">15000</span>
+      <span class="k">BROWSER_POOL_SIZE:</span> <span class="s">3</span>
+      <span class="k">MITM_PROXY_ENABLED:</span> <span class="s">${MITM_PROXY_ENABLED:-false}</span>
+      <span class="k">MITM_PROXY_CA_DIR:</span> <span class="s">/data/proxy-ca</span>
+    <span class="k">volumes:</span>
+      - <span class="s">trawl_proxy_ca:/data/proxy-ca</span>
     <span class="k">depends_on:</span> [<span class="s">redis</span>]
     <span class="k">healthcheck:</span>
-      <span class="k">test:</span> <span class="s">wget -qO- http://localhost:8191/health</span>
+      <span class="k">test:</span> [<span class="s">"CMD"</span>, <span class="s">"curl"</span>, <span class="s">"-sf"</span>, <span class="s">"http://localhost:8191/health"</span>]
       <span class="k">interval:</span> <span class="s">30s</span>
 <span class="k">volumes:</span>
-  redis_data:</code></pre>
+  redis_data:
+  trawl_proxy_ca:</code></pre>
           </div>
         </div>
 
@@ -218,7 +241,9 @@ const tabs: { id: Tab; label: string; hint: string }[] = [
   font-size: 12px;
   letter-spacing: 0.05em;
   text-decoration: none;
-  transition: all 0.12s;
+  transition:
+    color 0.12s,
+    border-color 0.12s;
 }
 .btn-ghost:hover {
   border-color: var(--text-muted);
@@ -240,6 +265,10 @@ const tabs: { id: Tab; label: string; hint: string }[] = [
 }
 
 .setup-tabs {
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
   display: flex;
   border-bottom: 1px solid var(--border);
   background: var(--bg-subtle);
@@ -257,7 +286,10 @@ const tabs: { id: Tab; label: string; hint: string }[] = [
   border-right: 1px solid var(--border);
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.12s;
+  transition:
+    color 0.12s,
+    background-color 0.12s,
+    border-color 0.12s;
 }
 .setup-tab:hover {
   color: var(--text);

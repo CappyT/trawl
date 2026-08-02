@@ -1,20 +1,23 @@
 <script lang="ts" setup>
 const barsVisible = shallowRef(false)
+const benchGrid = useTemplateRef<HTMLElement>("benchGrid")
+let benchmarkObserver: IntersectionObserver
 
 onMounted(() => {
-  const el = document.querySelector(".bench-grid")
-  if (!el) return
-  const observer = new IntersectionObserver(
+  if (!benchGrid.value) return
+  benchmarkObserver = new IntersectionObserver(
     (entries) => {
       if (entries[0]?.isIntersecting) {
         barsVisible.value = true
-        observer.disconnect()
+        benchmarkObserver.disconnect()
       }
     },
     { threshold: 0.2 },
   )
-  observer.observe(el)
+  benchmarkObserver.observe(benchGrid.value)
 })
+
+onBeforeUnmount(() => benchmarkObserver?.disconnect())
 
 const benchmarks = [
   {
@@ -49,52 +52,107 @@ const benchmarks = [
   },
 ]
 
-const rows = [
-  { feature: "Persistent browser pool", trawl: "✓ N instances", flaresolver: "✗ 1 instance", byparr: "✗ 1 instance" },
-  {
-    feature: "Domain session cache",
-    trawl: "✓ Redis, <500ms repeat",
-    flaresolver: "✗ always full solve",
-    byparr: "✗ always full solve",
-  },
-  { feature: "Adaptive tier execution", trawl: "✓ 4 tiers", flaresolver: "✗ always browser", byparr: "~" },
-  { feature: "Browser engine", trawl: "✓ Camoufox Firefox", flaresolver: "✗ Chrome", byparr: "✓ Camoufox Firefox" },
-  { feature: "Docker image size", trawl: "✓ 1.17 GB", flaresolver: "✓ 1.03 GB", byparr: "✗ 4.10 GB" },
-  { feature: "Memory footprint (peak)", trawl: "✓ 770 MB", flaresolver: "✓ 500 MB", byparr: "✗ 1.35 GB" },
-  { feature: "Cloudflare challenge speed", trawl: "✓ 4–15s", flaresolver: "✗ 11–18s", byparr: "✗ 13–18s" },
-  { feature: "CF Turnstile solving", trawl: "✓ shadow DOM click", flaresolver: "✗", byparr: "✗" },
-  { feature: "reCAPTCHA v2 solving", trawl: "✓ audio STT (free)", flaresolver: "✗", byparr: "✗" },
-  { feature: "hCaptcha solving", trawl: "✓ auto-pass", flaresolver: "✗", byparr: "✗" },
-  { feature: "GeeTest v4 solving", trawl: "✓ canvas gap detection", flaresolver: "✗", byparr: "✗" },
-  { feature: "Custom headers (all tiers)", trawl: "✓ all 4 tiers", flaresolver: "✗", byparr: "✗" },
-  { feature: "Proxy escalation", trawl: "✓ DC + residential", flaresolver: "✗", byparr: "~" },
-  { feature: "Self-healing pool", trawl: "✓", flaresolver: "✗", byparr: "✗" },
-  { feature: "FlareSolverr v2 compat", trawl: "✓", flaresolver: "✓ native", byparr: "✓" },
-  {
-    feature: "External solver APIs",
-    trawl: "✓ none required",
-    flaresolver: "✓ none required",
-    byparr: "✓ none required",
-  },
-  { feature: "Self-hosted", trawl: "✓", flaresolver: "✓", byparr: "✓" },
-]
-
-function renderCell(val: string) {
-  if (val.startsWith("✓")) return `<span class="check">${val}</span>`
-  if (val.startsWith("✗")) return `<span class="cross">${val}</span>`
-  if (val.startsWith("~")) return `<span class="partial">${val}</span>`
-  return val
+type CellTone = "check" | "cross" | "partial"
+interface ComparisonCell {
+  text: string
+  tone: CellTone
 }
+
+const statusMarks: Record<CellTone, string> = { check: "✓", partial: "~", cross: "✗" }
+const cell = (tone: CellTone, text: string): ComparisonCell => ({ text, tone })
+
+const rows = [
+  {
+    icon: "⬡",
+    feature: "Adaptive routing",
+    trawl: cell("check", "HTTP → cache → browser → residential"),
+    flaresolver: cell("cross", "Browser only"),
+    byparr: cell("cross", "Browser only"),
+  },
+  {
+    icon: "⇄",
+    feature: "Challenge proxy",
+    trawl: cell("check", "HTTP/S, WebSockets, Range"),
+    flaresolver: cell("cross", "API only"),
+    byparr: cell("cross", "API only"),
+  },
+  {
+    icon: "↝",
+    feature: "Proxy escalation",
+    trawl: cell("check", "DC → residential"),
+    flaresolver: cell("partial", "Manual proxy"),
+    byparr: cell("partial", "Manual proxy"),
+  },
+  {
+    icon: "◎",
+    feature: "Session reuse",
+    trawl: cell("check", "Redis by domain"),
+    flaresolver: cell("partial", "Manual sessions"),
+    byparr: cell("cross", "No domain cache"),
+  },
+  {
+    icon: "▣",
+    feature: "Browser pool",
+    trawl: cell("check", "Configurable and warm"),
+    flaresolver: cell("partial", "Temporary or session"),
+    byparr: cell("cross", "New browser per request"),
+  },
+  {
+    icon: "⟳",
+    feature: "Pool lifecycle",
+    trawl: cell("check", "Health checks + recycling"),
+    flaresolver: cell("cross", "No warm pool"),
+    byparr: cell("cross", "No warm pool"),
+  },
+  {
+    icon: "⊕",
+    feature: "Custom headers",
+    trawl: cell("check", "Safe across all tiers"),
+    flaresolver: cell("cross", "Not supported"),
+    byparr: cell("cross", "Not supported"),
+  },
+  {
+    icon: "◈",
+    feature: "Browser engine",
+    trawl: cell("check", "Camoufox"),
+    flaresolver: cell("partial", "Chrome + UDC"),
+    byparr: cell("check", "Camoufox"),
+  },
+  {
+    icon: "◇",
+    feature: "/v1 API",
+    trawl: cell("check", "GET + POST"),
+    flaresolver: cell("check", "Native"),
+    byparr: cell("partial", "GET only"),
+  },
+  {
+    icon: "○",
+    feature: "Paid solver APIs",
+    trawl: cell("check", "Not required"),
+    flaresolver: cell("check", "Not required"),
+    byparr: cell("check", "Not required"),
+  },
+  {
+    icon: "⌂",
+    feature: "Self-hosted",
+    trawl: cell("check", "Yes"),
+    flaresolver: cell("check", "Yes"),
+    byparr: cell("check", "Yes"),
+  },
+]
 </script>
 
 <template>
   <section id="compare" class="section">
     <div class="container">
       <p class="eyebrow">benchmarks</p>
-      <h2 class="section-title">TRAWL vs the alternatives.</h2>
-      <p class="section-sub">Measured on the same machine, same network, same target URLs.</p>
+      <h2 class="section-title">Less browser overhead. More ways through.</h2>
+      <p class="section-lead">
+        Compare real request timings and the paths each engine can take—from direct HTTP to full browser solving and
+        proxy escalation.
+      </p>
 
-      <div class="bench-grid">
+      <div ref="benchGrid" class="bench-grid">
         <div
           v-for="b in benchmarks"
           :key="b.url"
@@ -121,8 +179,23 @@ function renderCell(val: string) {
         </div>
       </div>
 
+      <p class="benchmark-note">
+        Measurements recorded on the same machine and network. They are illustrative, not guarantees; live results vary
+        with target protection, IP reputation, software versions, and session state. Capability rows were reviewed
+        against the upstream projects.
+      </p>
+
       <div class="table-wrap" style="margin-top: 56px;">
         <table>
+          <caption class="sr-only">
+            Feature comparison across TRAWL, FlareSolverr, and Byparr
+          </caption>
+          <colgroup>
+            <col class="feature-width" />
+            <col class="trawl-width" />
+            <col class="competitor-width" />
+            <col class="competitor-width" />
+          </colgroup>
           <thead>
             <tr>
               <th>capability</th>
@@ -133,10 +206,25 @@ function renderCell(val: string) {
           </thead>
           <tbody>
             <tr v-for="row in rows" :key="row.feature">
-              <td class="feature-col">{{ row.feature }}</td>
-              <td class="col-trawl" v-html="renderCell(row.trawl)" />
-              <td v-html="renderCell(row.flaresolver)" />
-              <td v-html="renderCell(row.byparr)" />
+              <td class="feature-col">
+                <span class="feature-icon" aria-hidden="true">{{ row.icon }}</span>{{ row.feature }}
+              </td>
+              <td class="col-trawl">
+                <span :class="row.trawl.tone"
+                  ><span class="status-mark">{{ statusMarks[row.trawl.tone] }}</span>{{ row.trawl.text }}</span
+                >
+              </td>
+              <td>
+                <span :class="row.flaresolver.tone"
+                  ><span class="status-mark">{{ statusMarks[row.flaresolver.tone] }}</span>
+                  {{ row.flaresolver.text }}</span
+                >
+              </td>
+              <td>
+                <span :class="row.byparr.tone"
+                  ><span class="status-mark">{{ statusMarks[row.byparr.tone] }}</span>{{ row.byparr.text }}</span
+                >
+              </td>
             </tr>
           </tbody>
         </table>
@@ -154,11 +242,22 @@ function renderCell(val: string) {
   margin-bottom: 12px;
 }
 
-.section-sub {
+.section-lead {
   font-size: 13px;
   line-height: 1.75;
   color: var(--text-muted);
-  max-width: 540px;
+  max-width: 650px;
+  margin-bottom: 24px;
+}
+
+.benchmark-note {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.benchmark-note {
+  max-width: 760px;
   margin-bottom: 48px;
 }
 
@@ -251,13 +350,26 @@ function renderCell(val: string) {
 
 table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 12px;
 }
 
+.feature-width {
+  width: 19%;
+}
+
+.trawl-width {
+  width: 31%;
+}
+
+.competitor-width {
+  width: 25%;
+}
+
 th,
 td {
-  padding: 12px 18px;
+  padding: 11px 14px;
   text-align: left;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
@@ -282,6 +394,20 @@ td {
   white-space: normal;
 }
 
+.feature-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 8px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: middle;
+}
+
 .col-trawl {
   background: var(--accent-tint);
 }
@@ -296,21 +422,32 @@ tr:hover .col-trawl {
   background: color-mix(in srgb, var(--accent-tint) 150%, transparent);
 }
 
-:deep(.check) {
+.check {
   color: var(--accent);
   font-weight: 600;
 }
-:deep(.cross) {
+.cross {
   color: var(--text-muted);
   opacity: 0.4;
 }
-:deep(.partial) {
+.partial {
   color: #f59e0b;
+}
+
+.status-mark {
+  display: inline-block;
+  width: 16px;
+  font-weight: 700;
 }
 
 @media (max-width: 800px) {
   .bench-grid {
     grid-template-columns: 1fr;
+  }
+
+  table {
+    min-width: 860px;
+    table-layout: auto;
   }
 }
 </style>
