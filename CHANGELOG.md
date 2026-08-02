@@ -5,10 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.1] - Unreleased
+## [1.3.1] - 2026-08-02
 
 ### Fixed
 - Keep pooled browser contexts under `BrowserPool` ownership so repeat Tier 2 requests cannot reuse a context closed by a separate cache (#45).
+
+### Changed
+- Bump all application and internal package versions to `1.3.1`.
 
 ## [1.3.0] - 2026-08-02
 
