@@ -31,7 +31,7 @@ export default defineNuxtConfig({
   },
 
   site: {
-    url: "https://trawl.dev",
+    url: "https://trawl.germondai.com",
     name: "TRAWL",
     description,
     defaultLocale: "en",
