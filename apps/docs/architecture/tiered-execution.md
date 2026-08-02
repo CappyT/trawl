@@ -17,7 +17,7 @@ Tier 1: Plain HTTP Fetch ─── success ──→ return (< 100ms)
 Tier 2: Cached Session ────── success ──→ return (~500ms)
   │ blocked / cache miss
   ▼
-Tier 3: Fresh Challenge ───── success ──→ cache cookies, return (4–15s)
+Tier 3: Fresh Challenge ───── success ──→ cache cookies, return
   │ IP flagged
   ▼
 Tier 4: Residential Proxy ─── success ──→ cache cookies, return (15–45s)
@@ -37,34 +37,40 @@ Accept-Language: en-US,en;q=0.9
 Accept-Encoding: gzip, deflate, br
 ```
 
-**Succeeds for:** sites without Cloudflare, sites that serve HTML to plain HTTP.
+**Succeeds for:** sites that serve the requested content without a browser challenge.
 
-**Fails for:** sites behind Cloudflare JS challenge (returns `Checking your browser...` interstitial or HTTP 403/429). The detector checks for the `cf-mitigated` response header and the challenge page title/body.
+**Escalates for:** recognized Cloudflare, Akamai, or Imperva challenge responses and blocked status codes such as 403 or 429. Detection uses provider-specific headers and HTML markers.
 
 **Skip with:** `skipHttp: true` in the request body, or `maxTier: 1` to cap at Tier 1.
 
 ## Tier 2 — Cached Browser Session
 
-Reads `session:{hostname}` from Redis. If found, injects the saved cookies into a pooled Firefox context and navigates. Because the Cloudflare `cf_clearance` cookie is present, the challenge page is skipped and the site loads directly.
+Reads `session:{hostname}` from Redis. If found, injects the saved cookies into a pooled Firefox context and navigates. When the target accepts the cached protection cookies and browser identity, the site loads without a fresh challenge solve.
 
-**Succeeds for:** any domain that was previously solved by Tier 3 and whose session hasn't expired.
+**Succeeds for:** previously solved domains whose cached session is still accepted.
 
-**Fails for:** expired sessions (Cloudflare `cf_clearance` has a finite lifetime). On failure, TRAWL invalidates the cached session and escalates to Tier 3.
+**Fails for:** expired or rejected sessions. On failure, TRAWL invalidates the cached session and escalates to Tier 3.
 
-## Tier 3 — Fresh Cloudflare Challenge Solve
+## Tier 3 — Fresh Challenge Solve
 
-Acquires a browser from the pool (or waits up to `BROWSER_ACQUIRE_TIMEOUT_MS` — default 15s — for one to become available). Navigates to the URL with no pre-loaded cookies. Waits for the Cloudflare challenge to resolve by polling `page.content()` every 500ms until the interstitial HTML is gone or `maxTimeout` elapses.
+Acquires a browser from the pool (or waits up to `BROWSER_ACQUIRE_TIMEOUT_MS` — default 15s — for one to become available), creates a fresh Camoufox context, and navigates without preloaded cookies. TRAWL identifies the wall and runs the matching Cloudflare, Akamai, or Imperva wait flow until the protected page replaces the interstitial or `maxTimeout` elapses.
 
 On success:
 - Extracts all cookies from the page context
 - Writes `session:{hostname} → { cookies, userAgent, savedAt }` to Redis (TTL = `SESSION_TTL_SECONDS`)
 - Returns the HTML and cookies to the caller
 
-Uses [Camoufox](https://github.com/daijro/camoufox) — Firefox with fingerprint patching at the C++/Juggler level. CF's detection scripts cannot distinguish it from a real Firefox profile.
+Uses [Camoufox](https://github.com/daijro/camoufox) — Firefox with fingerprint patching at the C++/Juggler level to reduce common automation signals. Success still depends on the target's challenge variant, IP reputation, and upstream network conditions.
+
+### Akamai Bot Manager challenges
+
+Tier 3 and Tier 4 detect Akamai's `sec-cpt` / SBSD behavioral interstitials. The Akamai flow generates human-like pointer movement, handles supported press-and-hold widgets, waits for a valid `_abck` sensor cookie, and revisits the original URL when the interstitial does not reload automatically.
+
+Akamai configurations vary between properties and change over time. TRAWL treats a persistent interstitial as blocked and can escalate to Tier 4 when a residential proxy is configured.
 
 ### Imperva/Incapsula challenges
 
-Tier 3 and Tier 4 also detect and solve Imperva/Incapsula WAF challenges, not just Cloudflare. Imperva's `reese84` (current) / `___utmvc` (legacy) sensor cookies are produced by an obfuscated in-page JS challenge — same principle as Cloudflare's `cf_clearance`: a real browser executing real JS produces the cookie without needing to understand the obfuscation. TRAWL detects the challenge page (`packages/tiers/src/detect.ts`'s `hasImpervaChallenge`) and polls for the sensor cookie (`packages/tiers/src/impervaWait.ts`) instead of the Cloudflare-specific wait loop.
+Tier 3 and Tier 4 also detect and resolve supported Imperva/Incapsula WAF challenges. Imperva's `reese84` (current) / `___utmvc` (legacy) sensor cookies are produced by an obfuscated in-page JS challenge. TRAWL detects the response with `packages/tiers/src/utils/detect.ts` and waits for the sensor cookie through `packages/tiers/src/utils/impervaWait.ts`.
 
 **Caveat:** unlike Turnstile, Imperva's script sometimes layers in TLS/JA3 and behavioral checks beyond plain cookie generation, and its obfuscation changes periodically — success isn't guaranteed at the same rate as Cloudflare. Some Imperva deployments also show a visible interactive CAPTCHA widget (distinct from hCaptcha/reCAPTCHA) instead of the passive sensor-only path; that variant isn't solved yet.
 
@@ -93,5 +99,5 @@ This runs Tier 1, then Tier 2, then returns an error if both fail — never laun
 | ---- | ------------ | ------------------------- |
 | 1    | 50–150ms     | No                        |
 | 2    | 400–700ms    | Yes (warm)                |
-| 3    | 4–15s        | Yes (fresh solve)         |
+| 3    | Challenge-dependent | Yes (fresh solve)    |
 | 4    | 15–45s       | Yes (fresh solve + proxy) |

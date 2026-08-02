@@ -19,7 +19,8 @@ docker compose -f docker-compose.minimal.yml up -d
 
 ### Cached (default)
 
-`docker-compose.yml` — scraper + Redis session cache. Repeat requests to the same domain return in ~500ms.
+`docker-compose.yml` — scraper + Redis session cache, with API port `8191` and optional proxy port
+`8192`. Repeat requests can reuse accepted sessions instead of solving the challenge again.
 
 ```bash
 docker compose up -d
@@ -38,9 +39,9 @@ trawl:
   restart: always
   mem_limit: 3g
   environment:
-    BROWSER_POOL_SIZE: 5
+    BROWSER_POOL_SIZE: 3
   healthcheck:
-    test: wget -qO- http://localhost:8191/health
+    test: ["CMD", "curl", "-sf", "http://localhost:8191/health"]
     interval: 30s
 ```
 
@@ -69,7 +70,7 @@ See [Standalone Containers → Older CPUs & Synology NAS](/deployment/standalone
 
 | Variable                         | Default              | Description                                                             |
 | -------------------------------- | -------------------- | ----------------------------------------------------------------------- |
-| `BROWSER_POOL_SIZE`              | `3`                  | Warm browser instances                                                  |
+| `BROWSER_POOL_SIZE`              | `3`                  | Warm browsers; supplied minimal/cached Compose files override this to `1` |
 | `BROWSER_ACQUIRE_TIMEOUT_MS`     | `15000`              | How long `acquire()` polls for a free browser before returning HTTP 429 |
 | `BROWSER_RECYCLE_AFTER_CONTEXTS` | `8`                  | Restart after this many blocked/needs-js outcomes; set `0` to disable   |
 | `REDIS_URL`                      | `redis://redis:6379` | Redis connection (set automatically in compose)                         |

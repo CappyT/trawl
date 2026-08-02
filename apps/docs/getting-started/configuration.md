@@ -101,7 +101,8 @@ These bounds keep an unresponsive Firefox process from permanently consuming a p
 
 **Default:** `3600` (1 hour)
 
-How long Cloudflare cookies are cached in Redis per domain. After this TTL the next request to the domain triggers a fresh challenge solve (Tier 3) and refreshes the cache.
+How long solved browser cookies and user-agent state are cached in Redis per domain. After this TTL
+the next protected request triggers a fresh challenge solve (Tier 3) and refreshes the cache.
 
 Cloudflare's `cf_clearance` cookie typically has a 30-minute expiry. Setting `SESSION_TTL_SECONDS` below 1800 wastes cache hits; setting it above 7200 risks replaying expired cookies (TRAWL handles this gracefully by invalidating the cache and falling back to Tier 3).
 

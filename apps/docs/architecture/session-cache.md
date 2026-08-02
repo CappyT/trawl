@@ -1,11 +1,13 @@
 ---
 title: Session Cache
-description: How TRAWL caches Cloudflare cookies in Redis to make repeat requests fast.
+description: How TRAWL caches solved browser sessions in Redis to avoid unnecessary challenge work.
 ---
 
 # Session Cache
 
-The session cache is what makes Tier 2 possible. After every successful Tier 3 solve, the extracted Cloudflare cookies are saved to Redis. The next request to the same domain injects those cookies into a browser context, skipping the challenge entirely.
+The session cache is what makes Tier 2 possible. After a successful Tier 3 or Tier 4 solve, TRAWL
+saves the extracted cookies and browser user agent in Redis. The next request to the same hostname
+injects that state into a browser context and attempts to reuse the solved session.
 
 ## Storage format
 
@@ -32,7 +34,7 @@ https://example.com/page    → session:example.com  (same key)
 https://sub.example.com/    → session:sub.example.com  (different key)
 ```
 
-Subdomains have separate sessions because Cloudflare can issue different challenge cookies per subdomain.
+Subdomains have separate sessions because WAF and application cookies can differ per subdomain.
 
 ## Lifecycle
 
@@ -44,18 +46,18 @@ Tier 3 succeeds
   │
   └── next request to same domain:
         REDIS GET session:hostname
-          ├── hit  → Tier 2: inject cookies, navigate (500ms)
+          ├── hit  → Tier 2: inject cookies and navigate
           └── miss → Tier 3: fresh solve, save to cache
 ```
 
 ## Invalidation
 
-If Tier 2 navigates with the cached cookies and the result is still a Cloudflare interstitial (the session expired before Redis's TTL), the orchestrator:
+If Tier 2 navigates with cached state and still receives a recognized challenge wall, the orchestrator:
 
 1. Calls `sessionCache.invalidate(domain)` — deletes the Redis key
 2. Escalates to Tier 3 to get a fresh session
 
-This handles the case where Cloudflare's `cf_clearance` cookie (30-minute expiry) expires before the Redis TTL does.
+This handles provider cookies expiring or being rejected before the Redis TTL ends.
 
 ## Redis
 

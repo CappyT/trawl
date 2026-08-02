@@ -5,7 +5,9 @@ description: Connect Sonarr, Radarr, Lidarr, Readarr and other *arr apps via Pro
 
 # *arr Apps
 
-Sonarr, Radarr, Lidarr, and Readarr do not talk to FlareSolverr directly. They go through **Prowlarr** (recommended) or **Jackett** as an indexer proxy. You only need to configure TRAWL once in the indexer manager — all *arr apps that use that manager get Cloudflare bypass automatically.
+Sonarr, Radarr, Lidarr, and Readarr do not talk to FlareSolverr directly. They go through
+**Prowlarr** (recommended) or **Jackett** as an indexer proxy. Configure TRAWL once in the indexer
+manager and the connected *arr apps can use its challenge handling.
 
 ## Recommended setup
 
@@ -47,11 +49,12 @@ Bazarr uses subtitle providers, not torrent indexers, so it does not use FlareSo
 
 ## Performance expectations
 
-| Request type                                     | Expected time                  |
-| ------------------------------------------------ | ------------------------------ |
-| First request to a domain                        | 4–15s (fresh Cloudflare solve) |
-| Repeat request (same domain, session cached)     | ~500ms                         |
-| Plain site (no Cloudflare)                       | < 100ms                        |
-| IP flagged by Cloudflare (Tier 4, if configured) | 15–45s                         |
+| Request type                                 | Expected path                              |
+| -------------------------------------------- | ------------------------------------------ |
+| Unprotected response                         | Tier 1, no browser                         |
+| Recognized WAF challenge                     | Tier 3 fresh browser solve                 |
+| Repeat request with an accepted session      | Tier 2 cached browser session              |
+| Direct/datacenter path rejected              | Tier 4, when a residential proxy is set    |
 
-The session cache TTL is configurable via `SESSION_TTL_SECONDS` (default 1 hour). Most Cloudflare-protected indexers re-challenge after 30–60 minutes, so daily search schedules in *arr apps almost always hit the cache.
+The session cache TTL is configurable via `SESSION_TTL_SECONDS` (default 1 hour). Actual latency
+depends on the indexer, challenge variant, IP reputation, and whether its saved session remains valid.

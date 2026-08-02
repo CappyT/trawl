@@ -66,7 +66,7 @@ orchestrator used by `POST /scrape`:
 For browser-tier HTML responses, the proxy returns the rendered solved DOM rather than the original
 challenge response. Binary responses use the raw response bytes when the winning tier exposes them.
 
-A hostname that produced a Cloudflare challenge is cached for five minutes. During that window,
+A hostname that produced a supported challenge wall is cached for five minutes. During that window,
 later requests for the hostname skip Tier 0 and go directly to the tiered solver.
 
 Challenge and CAPTCHA solving is best effort. A site can still reject the browser, require user

@@ -28,15 +28,14 @@ Everything has a working default. See [Configuration](/getting-started/configura
 docker compose up -d
 ```
 
-This starts three containers:
+This starts two containers:
 
 | Container | Purpose                 | Port     |
 | --------- | ----------------------- | -------- |
 | `redis`   | Session cache backend   | internal |
-| `api`     | Browser pool + HTTP API | 8191     |
-| `web`     | Landing page & docs UI  | 3000     |
+| `trawl`   | Browser pool, API, and optional forward proxy | 8191, 8192 |
 
-The API takes **15–30 seconds** on first boot while it launches the browser pool and downloads Camoufox (only on first build). Watch progress:
+The API takes **15–30 seconds** to launch and warm the browser pool. Watch progress:
 
 ```bash
 docker compose logs -f api
@@ -69,7 +68,9 @@ Expected:
     "busy": 0,
     "available": 3,
     "restarts": 0,
-    "avgRestarts": 0
+    "avgRestarts": 0,
+    "stalled": 0,
+    "live": 3
   }
 }
 ```
@@ -86,10 +87,13 @@ curl -s -X POST http://localhost:8191/v1 \
   }' | jq '{status, url: .solution.url}'
 ```
 
-A `status: "ok"` response confirms TRAWL is working. The **second request to the same domain** returns in ~500ms from the session cache.
+A `status: "ok"` response confirms TRAWL is working. Repeat requests can reuse the cached browser
+session when the target still accepts it.
 
-::: tip First request is slow — that's expected
-The first time TRAWL sees a domain it solves the Cloudflare challenge fresh (4–15s). Every subsequent request uses the cached session and returns in under 500ms. This is the whole point.
+::: tip Challenge requests take longer
+An unprotected target may finish in Tier 1 without opening a browser. A recognized Cloudflare,
+Akamai, or Imperva wall escalates to a fresh browser flow. Later requests can use Tier 2 while the
+saved session remains valid.
 :::
 
 ## 6. Use the native API (optional)
@@ -118,8 +122,7 @@ Done. No other configuration changes are needed. TRAWL implements the FlareSolve
 
 ```
 localhost:8191  →  TRAWL API  (FlareSolverr-compatible + native endpoint)
-localhost:3000  →  Web UI     (landing page, visible in your browser)
-localhost:3001  →  Docs       (this documentation, served locally)
+localhost:8192  →  HTTP/HTTPS forward proxy (when MITM_PROXY_ENABLED=true)
 ```
 
 To stop everything:

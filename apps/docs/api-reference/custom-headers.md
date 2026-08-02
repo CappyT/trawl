@@ -5,7 +5,8 @@ description: Pass custom HTTP headers through TRAWL to the target URL across all
 
 # Custom Headers
 
-Both `/v1` and `/scrape` accept an optional `headers` object. Headers are forwarded to the target URL across all four execution tiers.
+Both `/v1` and `/scrape` accept an optional `headers` object. Allowed headers are forwarded to the
+target URL across all four execution tiers.
 
 ## Usage
 
@@ -33,7 +34,21 @@ Both `/v1` and `/scrape` accept an optional `headers` object. Headers are forwar
 }
 ```
 
-Custom headers are merged **after** browser defaults, so they take precedence over anything like `User-Agent` or `Cache-Control` that TRAWL sets internally.
+Custom headers are merged after browser defaults. Security-sensitive routing and fingerprint headers
+are removed at the public API boundary rather than overridden.
+
+## API header policy
+
+The JSON APIs accept application headers such as `Accept`, `Cache-Control`, `Content-Type`,
+`Origin`, `Referer`, `Range`, validators, and custom API-key headers. They intentionally discard:
+
+- `Authorization`, `Cookie`, `Proxy-Authorization`, and `User-Agent`;
+- `Host`, `Content-Length`, connection/framing headers, and forwarding headers;
+- browser-controlled `Sec-Fetch-*`, `Sec-CH-UA-*`, and Cloudflare routing headers.
+
+If an integration needs transparent forwarding of authentication cookies, authorization, or its own
+user agent, use the [HTTP/HTTPS proxy](/proxy/overview). Its trusted proxy path preserves end-to-end
+headers and strips only hop-by-hop connection headers.
 
 ## How headers are applied per tier
 
@@ -41,20 +56,22 @@ Custom headers are merged **after** browser defaults, so they take precedence ov
 | ----------------------------------------- | ----------------------------------- | -------------------------------- |
 | **Tier 1** — plain HTTP fetch             | Spread into `fetch()` headers       | All requests (there is only one) |
 | **Tier 2** — cached browser session       | `page.route(url, ...)` interception | Main document request only       |
-| **Tier 3** — fresh CF challenge solve     | `page.route(url, ...)` interception | Main document request only       |
+| **Tier 3** — fresh challenge solve        | `page.route(url, ...)` interception | Main document request only       |
 | **Tier 4** — residential proxy escalation | `page.route(url, ...)` interception | Main document request only       |
 
-For browser tiers, route interception is scoped to the **exact target URL**. Subresources (JS, CSS, images, fonts, third-party CDNs) and Cloudflare challenge endpoints (`cdn-cgi/*`) are never intercepted — your `Authorization` header does not leak to third parties, and CF challenge solving is unaffected.
+For browser tiers, route interception is scoped to the **exact target URL**. Subresources (JS, CSS,
+images, fonts, third-party CDNs) and provider challenge endpoints are not given the caller's custom
+headers.
 
-## CF challenge + custom headers flow
+## Challenge + custom headers flow
 
 When a page requires both challenge bypass and custom headers, the sequence is:
 
 ```
 1. page.goto(url) — route fires, custom headers added to initial request
-2. CF intercepts → serves JS challenge interstitial
-3. Challenge scripts run on cdn-cgi/* paths → route never fires, CF sees clean requests
-4. cf_clearance cookie issued → browser redirects back to original url
+2. The WAF serves a challenge interstitial
+3. Provider scripts run on their own endpoints without caller headers
+4. The browser completes the supported challenge flow and returns to the target
 5. route fires again → custom headers applied to the real page load ✓
 ```
 
@@ -62,16 +79,12 @@ When a page requires both challenge bypass and custom headers, the sequence is:
 
 | Use case                               | Header                             |
 | -------------------------------------- | ---------------------------------- |
-| Authenticated APIs and portals         | `Authorization: Bearer <token>`    |
 | Embed-only / iframe-restricted content | `Referer: https://parent-site.com` |
 | CORS-restricted endpoints              | `Origin: https://allowed-site.com` |
 | Custom API keys                        | `X-API-Key: <key>`                 |
-| Additional session tokens              | `Cookie: session=<value>`          |
+| Conditional or partial requests        | `If-None-Match`, `Range`           |
 
-::: tip Cookie behaviour
-Passing a `Cookie` header appends to any cookies the browser already holds (CF clearance, cached session cookies). It does not replace them.
-:::
-
-::: warning Headers and CF-protected pages
-Pages that require custom auth headers are rarely also behind CF JS challenges — CF challenges are for public sites needing bot/DDoS protection, while auth headers imply a private/restricted resource. If you hit both, TRAWL handles it correctly as described above.
+::: warning Authentication headers
+`Authorization`, `Cookie`, and caller-controlled `User-Agent` values are not accepted by `/v1` or
+`/scrape`. Configure TRAWL as a forward proxy when those headers must pass through unchanged.
 :::

@@ -33,7 +33,9 @@ Restart Jackett after editing the file.
 
 ## Verify
 
-Navigate to any Cloudflare-protected indexer in Jackett and click **Test**. The first test triggers a full challenge solve (~10–30s). Subsequent tests on the same domain return in ~500ms from the TRAWL session cache.
+Navigate to a protected indexer in Jackett and click **Test**. A first request that encounters a
+recognized wall triggers the browser challenge flow. Subsequent tests can reuse the cached session
+while it remains valid.
 
 ## Docker
 

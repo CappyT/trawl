@@ -28,7 +28,9 @@ TRAWL implements the FlareSolverr v2 API exactly, including the `version: "2.0.0
 
 ## Verification
 
-After saving, trigger a search on any Cloudflare-protected indexer. TRAWL will handle the challenge transparently. Subsequent searches to the same indexer domain return from cache in ~500ms.
+After saving, trigger a search on a protected indexer. TRAWL handles recognized Cloudflare, Akamai,
+and Imperva walls through its tier engine. Later searches can reuse the saved session while the
+target continues to accept it.
 
 ## Prowlarr inside Docker
 

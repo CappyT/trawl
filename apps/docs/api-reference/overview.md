@@ -34,6 +34,17 @@ Content-Type: application/json
 | `POST` | `/v1`     | FlareSolverr v2 compatible    |
 | `POST` | `/scrape` | Native TRAWL API              |
 
+## Forward proxy
+
+When `MITM_PROXY_ENABLED=true`, TRAWL also listens as an HTTP/HTTPS forward proxy on
+`MITM_PROXY_PORT` (default `8192`). This is a socket-level proxy interface rather than a JSON API
+endpoint. It forwards normal traffic directly and escalates recognized challenge walls through the
+same tier engine as `/scrape`.
+
+HTTPS clients must trust the generated TRAWL CA. Start with the
+[proxy overview](/proxy/overview), then follow [client setup](/proxy/client-setup) and
+[CA installation](/proxy/ca-installation).
+
 ## Error responses
 
 Most error responses follow this shape:
