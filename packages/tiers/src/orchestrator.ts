@@ -1,4 +1,4 @@
-import type { BrowserHandle, PersistentBrowserContext } from "@trawl/browser"
+import type { BrowserHandle } from "@trawl/browser"
 import { FINGERPRINT, FINGERPRINT_POOL } from "@trawl/browser"
 import type { Cookie, ScrapeRequest, ScrapeResult, SessionData, TierResult } from "@trawl/types"
 import { runTier1 } from "./tiers/1"
@@ -44,13 +44,6 @@ export interface OrchestratorDeps {
   proxyPool?: ProxyPool
   residentialProxyPool?: ProxyPool
   onTierAttempt?: (result: TierResult) => void
-  // Optional per-host persistent browser context cache. When provided, Tier 2
-  // reuses a warm context with cached `cf_clearance` cookies on repeat visits
-  // — the cookie-loading + Redis round-trip is skipped entirely.
-  acquireContext?(handleId: number, hostname: string): Promise<PersistentBrowserContext | undefined>
-  saveContext?(handleId: number, hostname: string, context: PersistentBrowserContext): Promise<void>
-  releaseContext?(handleId: number, hostname: string): void
-  invalidateContext?(hostname: string): Promise<void>
 }
 
 const extractDomain = (url: string): string => {
@@ -119,17 +112,7 @@ export async function scrape(req: ScrapeRequest, deps: OrchestratorDeps): Promis
     const session = await deps.loadSession(domain)
     if (session && maxTier >= 2) {
       const remaining = maxTimeout - (Date.now() - totalStart)
-      const t2 = await runTier2(
-        req.url,
-        handle,
-        session,
-        remaining,
-        sanitizedHeaders,
-        req.method,
-        req.body,
-        deps,
-        domain,
-      )
+      const t2 = await runTier2(req.url, handle, session, remaining, sanitizedHeaders, req.method, req.body)
       emit(t2)
       if (hasUsablePayload(t2)) {
         if (t2.cookies && t2.cookies.length > 0) {
