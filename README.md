@@ -8,18 +8,20 @@
 ## **Welcome** to <a href="https://trawl.germondai.com" target="_blank">**TRAWL**</a>! 👋
 
 Self-hosted web scraping engine with best-effort JS challenge and CAPTCHA solving.\
-Support for: Cloudflare, Turnstile, Interstitial, reCAPTCHA, hCaptcha, GeeTest, Imperva (experimental).\
+Dedicated flows for Cloudflare, Akamai Bot Manager, and Imperva/Incapsula (best effort), plus Turnstile, reCAPTCHA, hCaptcha, and GeeTest.\
 Much faster and more reliable FlareSolverr & Byparr alternative and drop-in replacement for your \*arr stack.
 
 ## Features
 
 - **2-6x faster** - compared to FlareSolverr or Byparr it returns much faster with higher success rate
-- **4-tier execution** - plain HTTP fetch → cached browser session → fresh CF solve → residential proxy
+- **4-tier execution** - plain HTTP fetch → cached browser session → fresh challenge solve → residential proxy
+- **Challenge-aware HTTP/HTTPS proxy** - direct forwarding for normal traffic, automatic tier escalation for detected walls, plus WebSockets, binary bodies, and Range/206 support
+- **Multi-WAF handling** - dedicated Cloudflare, Akamai Bot Manager, and Imperva/Incapsula detection and browser flows
 - **Native captcha solving** - CF Turnstile/Interstitial, reCAPTCHA v2 (free STT), hCaptcha, GeeTest v4 Slide
 - **Camoufox Firefox** - fingerprint-patched at the C++/Juggler level to reduce automation signals
-- **Session cache** - bypass cookies stored in Redis; repeat requests to the same domain return in ~500ms
+- **Session cache** - solved cookies and browser identity stored in Redis; accepted sessions can avoid a fresh solve
 - **FlareSolverr compatible** - works with Prowlarr, Jackett, Sonarr, and the full \*arr ecosystem out of the box
-- **No external APIs required** - reCAPTCHA audio transcription uses Google's free STT endpoint by default
+- **No paid solver API required** - reCAPTCHA audio can use Google's free STT endpoint or an optional local Whisper service
 
 ## Sponsors
 
@@ -291,7 +293,7 @@ Tier 1: Plain HTTP fetch ────── success ──→ return (< 100ms)
 Tier 2: Cached session ─────── success ──→ return (~500ms)
   │ cache miss / expired
   ▼
-Tier 3: Fresh CF solve ─────── success ──→ cache + return (4–15s)
+Tier 3: Fresh challenge solve ─ success ──→ cache + return
   │ IP flagged
   ▼
 Tier 4: Residential proxy ──── success ──→ cache + return (15–45s)

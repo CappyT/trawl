@@ -16,7 +16,7 @@ TRAWL is currently in pre-1.0 development (`0.1.x`). Only the latest minor relea
 Report privately through either of these channels (in order of preference):
 
 1. **GitHub Security Advisories** — open a [private security advisory](https://github.com/germondai/trawl/security/advisories/new) on this repository.
-2. **Email** — `security@trawl.dev`
+2. **Email** — `security@trawl.germondai.com`
 
 Both channels reach the maintainer (@germondai). Please include:
 
