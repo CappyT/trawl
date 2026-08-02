@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.0] - 2026-07-27
+## [1.3.0] - 2026-08-02
 
 ### Added
 - Detect and resolve Akamai Bot Manager behavioral interstitials across scraper tiers and the HTTP/HTTPS proxy (#33).
@@ -13,9 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Reject non-object request bodies and missing, non-string, or blank `url` values with HTTP 400 before scraper-tier execution (#34).
-- Recover stalled browser checkouts and bound browser close/launch operations so wedged Firefox processes cannot silently exhaust the pool (#36, #37).
+- Recover stalled browser checkouts and bound browser close/launch operations so wedged Firefox processes cannot silently exhaust the pool (#36, #37, #48).
 - Report HTTP 503 from `/health` whenever the browser pool has no live capacity.
 - Pass authenticated proxy credentials to Firefox separately from the proxy server URL in Tier 3 and Tier 4 (#40).
+- Return complete Tier 1 text responses instead of the 4 KiB challenge-detection preview (#46, #47).
 - Record the correct architecture-specific Camoufox release metadata in API images.
 
 ### Changed
