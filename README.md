@@ -87,6 +87,19 @@ curl http://localhost:8191/health
 
 First boot takes 15–30s while the browser pool warms up. Subsequent starts are fast.
 
+### NAS app catalogs
+
+Prefer a one-click installation? TRAWL is available from the community app
+catalogs for both TrueNAS and Unraid:
+
+- [TrueNAS Community Apps](https://apps.truenas.com/catalog/trawl_community/) —
+  open **Apps → Discover Apps** and search for **TRAWL**.
+- [Unraid Community Apps](https://ca.unraid.net/apps/trawl-1o4q23p06utr4h) —
+  open the **Apps** tab and search for **Trawl**.
+
+Thanks to the TrueNAS and Unraid community contributors who packaged and
+published these integrations.
+
 ## API
 
 ### FlareSolverr-compatible (`/v1`)
