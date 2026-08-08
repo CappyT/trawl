@@ -63,6 +63,16 @@ function makeFactory() {
 }
 
 describe("BrowserPool recycling", () => {
+  test("launch timeout diagnoses outbound network and GeoIP availability", async () => {
+    const pool = createPool({
+      poolSize: 1,
+      launchTimeoutMs: 20,
+      browserFactory: NEVER,
+    })
+
+    await expect(pool.init()).rejects.toThrow("browser launch exceeded 20ms; check outbound network and GeoIP access")
+  })
+
   test("restarts the browser after the temporary context threshold", async () => {
     const { factory, browsers, contexts } = makeFactory()
 

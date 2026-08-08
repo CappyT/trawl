@@ -15,6 +15,31 @@ description: Common issues and how to fix them.
 2. **Camoufox binary not installed** — The API Dockerfile runs `bunx camoufox-js fetch`. If this step was skipped (e.g. build cache reuse), rebuild: `docker compose build --no-cache api`.
 3. **shm_size too small** — Ensure `shm_size: 1gb` is set on the API service.
 
+### Startup timeout behind Gluetun
+
+**Symptom:** TRAWL logs `browser launch exceeded ...` during startup and never becomes healthy.
+
+Camoufox performs outbound work, including GeoIP lookup, while launching. If TRAWL starts before
+Gluetun has established its VPN connection, that work can hit the browser **launch timeout**. Set
+`depends_on.gluetun.condition: service_healthy` as shown in
+[Docker Compose → Route TRAWL through Gluetun](/deployment/docker-compose#route-trawl-through-gluetun).
+
+This differs from the **acquire timeout** (`BROWSER_ACQUIRE_TIMEOUT_MS`): a launch timeout means a
+browser could not start, often because outbound networking or a GeoIP endpoint was unavailable; an
+acquire timeout means the browsers started but all pool capacity remained busy, and `/v1` returns
+HTTP 429.
+
+### Requests through the VPN return HTTP 403
+
+If TRAWL starts successfully but a target returns HTTP 403, the VPN is already routing traffic and
+the target is likely rejecting the VPN exit IP. Waiting longer for startup will not fix that. Try a
+different Gluetun server or exit region, or configure an appropriate application proxy.
+
+Gluetun and `PROXY_URL` operate at different layers: `network_mode: service:gluetun` routes all
+container traffic through the VPN, while the optional `PROXY_URL` is used explicitly by TRAWL's
+proxy escalation tier. Setting `PROXY_URL` is not necessary for Gluetun routing, and setting it
+means that proxied requests still reach that proxy through Gluetun's network namespace.
+
 ## Container crash-loops with `EISDIR` or `Cannot find module` errors
 
 **Symptom:** The container restarts continuously, logging one of:

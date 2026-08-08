@@ -477,7 +477,9 @@ export class BrowserPool {
     ]).finally(() => {
       if (timer) clearTimeout(timer)
     })
-    if (!result) throw new Error(`browser launch exceeded ${ms}ms`)
+    if (!result) {
+      throw new Error(`browser launch exceeded ${ms}ms; check outbound network and GeoIP access`)
+    }
     return result
   }
 
