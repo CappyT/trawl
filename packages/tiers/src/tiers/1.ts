@@ -13,6 +13,7 @@ import { isTextContentType } from "../utils/response"
 
 export interface Tier1Result extends TierResult {
   tier: 1
+  effectiveUrl?: string
   html?: string
   body?: Uint8Array
   responseHeaders?: Record<string, string>
@@ -148,6 +149,7 @@ export async function runTier1(
       tier: 1,
       status: "success",
       durationMs: Date.now() - start,
+      effectiveUrl: res.url,
       // `html` is best-effort text view of the body — only meaningful for text-like
       // content-types. Empty for binary payloads so /scrape consumers see the body
       // is binary via the contentType field. `previewText` is bounded to 4 KiB for

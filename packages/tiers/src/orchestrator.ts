@@ -81,7 +81,7 @@ export async function scrape(req: ScrapeRequest, deps: OrchestratorDeps): Promis
       // UA from the pool so even Tier 1 requests don't share a single signature.
       const tier1UA = FINGERPRINT_POOL[Math.floor(Math.random() * FINGERPRINT_POOL.length)].userAgent
       return {
-        url: req.url,
+        url: t1.effectiveUrl ?? req.url,
         html: normalizeHtml(t1.html ?? ""),
         cookies: [],
         userAgent: tier1UA,
@@ -123,7 +123,7 @@ export async function scrape(req: ScrapeRequest, deps: OrchestratorDeps): Promis
           })
         }
         return {
-          url: req.url,
+          url: t2.effectiveUrl ?? req.url,
           html: normalizeHtml(t2.html ?? ""),
           cookies: t2.cookies ?? [],
           userAgent: session.userAgent,
@@ -187,7 +187,7 @@ export async function scrape(req: ScrapeRequest, deps: OrchestratorDeps): Promis
         })
       }
       return {
-        url: req.url,
+        url: t3.effectiveUrl ?? req.url,
         html: normalizeHtml(t3.html ?? ""),
         cookies,
         userAgent: t3.userAgent ?? FINGERPRINT.userAgent,
@@ -249,7 +249,7 @@ export async function scrape(req: ScrapeRequest, deps: OrchestratorDeps): Promis
         })
       }
       return {
-        url: req.url,
+        url: t4.effectiveUrl ?? req.url,
         html: normalizeHtml(t4.html ?? ""),
         cookies,
         userAgent: t4.userAgent ?? FINGERPRINT.userAgent,

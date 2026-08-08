@@ -22,6 +22,7 @@ import { routeContinueOverrides } from "../utils/sanitize"
 
 export interface Tier4Result extends TierResult {
   tier: 4
+  effectiveUrl?: string
   html?: string
   body?: Uint8Array
   responseHeaders?: Record<string, string>
@@ -170,6 +171,7 @@ export async function runTier4(
       tier: 4,
       status: "success",
       durationMs: Date.now() - start,
+      effectiveUrl: page.url(),
       html: !captured.contentType || isTextContentType(captured.contentType) ? normalizeHtml(html) : "",
       ...captured,
       cookies,
