@@ -96,6 +96,35 @@ RESIDENTIAL_PROXY_URL=http://user:pass@residential.example.com:8080
 For supported endpoint formats, pools, and mounted list files, see
 [Configuration → Proxies](/getting-started/configuration#proxies).
 
+## Route TRAWL through Gluetun
+
+To route all TRAWL traffic through a Gluetun VPN, share Gluetun's network namespace and wait for
+its healthcheck before starting TRAWL. Because TRAWL no longer has its own network namespace,
+publish both TRAWL ports on the `gluetun` service:
+
+```yaml
+services:
+  gluetun:
+    image: qmcgaw/gluetun
+    # Configure your VPN provider and credentials here.
+    ports:
+      - "8191:8191"
+      - "8192:8192"
+
+  trawl:
+    image: ghcr.io/germondai/trawl:latest
+    network_mode: service:gluetun
+    shm_size: 1gb
+    depends_on:
+      gluetun:
+        condition: service_healthy
+```
+
+Do not also publish `8191` or `8192` on `trawl`; Compose does not allow port publishing with
+`network_mode: service:gluetun`. Gluetun routing applies to all outbound container traffic.
+`PROXY_URL`, by contrast, is optional application-level proxy configuration used by TRAWL's
+escalation tiers; it is not required to send the container through the VPN.
+
 ## Logs
 
 ```bash
