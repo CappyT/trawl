@@ -37,7 +37,7 @@ interface ScrapeRequest {
 
 ```typescript
 interface ScrapeResult {
-  url: string
+  url: string                  // final URL after redirects
   html: string
   cookies: Cookie[]
   userAgent: string

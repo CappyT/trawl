@@ -10,6 +10,7 @@ import { routeContinueOverrides } from "../utils/sanitize"
 
 export interface Tier2Result extends TierResult {
   tier: 2
+  effectiveUrl?: string
   html?: string
   body?: Uint8Array
   responseHeaders?: Record<string, string>
@@ -113,6 +114,7 @@ export async function runTier2(
       tier: 2,
       status: "success",
       durationMs: Date.now() - start,
+      effectiveUrl: page.url(),
       // For HTML/text content-types, `html` is the rendered DOM. For binary, leave
       // empty so /scrape consumers know to use `body`/`contentType`.
       html: !captured.contentType || isTextContentType(captured.contentType) ? normalizeHtml(html) : "",
