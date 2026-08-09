@@ -4,7 +4,8 @@ import { solvePageCaptchas } from "../solvers"
 import { normalizeSameSite, toCookies } from "../utils/cookies"
 import { hasAkamaiChallenge, isBlocked, isBrowserErrorPage, isCloudflarePage } from "../utils/detect"
 import { normalizeHtml } from "../utils/html"
-import { captureResponse, isTextContentType, type MinimalResponse } from "../utils/response"
+import { trackMainDocumentResponses } from "../utils/mainResponse"
+import { captureResponse, isTextContentType } from "../utils/response"
 import type { RouteLike } from "../utils/sanitize"
 import { routeContinueOverrides } from "../utils/sanitize"
 
@@ -60,14 +61,7 @@ export async function runTier2(
       })
     }
 
-    let statusCode = 200
-    const mainResponseHolder: { value?: MinimalResponse } = {}
-    page.on("response", (res: MinimalResponse) => {
-      if (res.url() === url) {
-        statusCode = res.status()
-        if (!mainResponseHolder.value) mainResponseHolder.value = res
-      }
-    })
+    const mainResponse = trackMainDocumentResponses(page)
 
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: maxTimeout })
     await page.waitForLoadState("networkidle", { timeout: 8_000 }).catch(() => {})
@@ -83,7 +77,7 @@ export async function runTier2(
       }
     }
 
-    if (isCloudflarePage(html, {})) {
+    if (isCloudflarePage(html, mainResponse.headers)) {
       return { tier: 2, status: "blocked", durationMs: Date.now() - start, reason: "session-expired" }
     }
 
@@ -93,8 +87,8 @@ export async function runTier2(
       return { tier: 2, status: "blocked", durationMs: Date.now() - start, reason: "akamai-session-expired" }
     }
 
-    if (isBlocked(statusCode, html)) {
-      return { tier: 2, status: "blocked", durationMs: Date.now() - start, reason: `http-${statusCode}` }
+    if (isBlocked(mainResponse.status, html)) {
+      return { tier: 2, status: "blocked", durationMs: Date.now() - start, reason: `http-${mainResponse.status}` }
     }
 
     // Attempt to solve any embedded captcha widgets (Turnstile, reCAPTCHA, hCaptcha).
@@ -106,9 +100,14 @@ export async function runTier2(
       captchasSolved = result.solved
     }
 
+    const finalHtml = await page.content()
+    if (isCloudflarePage(finalHtml, mainResponse.headers)) {
+      return { tier: 2, status: "blocked", durationMs: Date.now() - start, reason: "session-expired" }
+    }
+
     const cookies: Cookie[] = toCookies(await activeContext.cookies())
 
-    const captured = await captureResponse(mainResponseHolder.value)
+    const captured = await captureResponse(mainResponse.response)
 
     return {
       tier: 2,
@@ -117,10 +116,10 @@ export async function runTier2(
       effectiveUrl: page.url(),
       // For HTML/text content-types, `html` is the rendered DOM. For binary, leave
       // empty so /scrape consumers know to use `body`/`contentType`.
-      html: !captured.contentType || isTextContentType(captured.contentType) ? normalizeHtml(html) : "",
+      html: !captured.contentType || isTextContentType(captured.contentType) ? normalizeHtml(finalHtml) : "",
       ...captured,
       cookies,
-      statusCode,
+      statusCode: mainResponse.status,
       captchasSolved: captchasSolved.length > 0 ? captchasSolved : undefined,
     }
   } catch (err) {

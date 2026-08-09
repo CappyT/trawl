@@ -15,8 +15,9 @@ import {
 } from "../utils/detect"
 import { normalizeHtml } from "../utils/html"
 import { waitForImpervaResolution } from "../utils/impervaWait"
+import { trackMainDocumentResponses } from "../utils/mainResponse"
 import { isHardNetworkFailure } from "../utils/network"
-import { captureResponse, isTextContentType, type MinimalResponse } from "../utils/response"
+import { captureResponse, isTextContentType } from "../utils/response"
 import type { RouteLike } from "../utils/sanitize"
 import { routeContinueOverrides } from "../utils/sanitize"
 
@@ -66,16 +67,7 @@ export async function runTier4(
       })
     }
 
-    let statusCode = 200
-    const mainResponseHolder: { value?: MinimalResponse } = {}
-    page.on("response", (res: MinimalResponse) => {
-      try {
-        if (res.url() === url || res.url().startsWith(url.replace(/\/$/, ""))) {
-          statusCode = res.status()
-          if (!mainResponseHolder.value) mainResponseHolder.value = res
-        }
-      } catch {}
-    })
+    const mainResponse = trackMainDocumentResponses(page)
 
     const gotoErr = await page
       .goto(url, {
@@ -96,7 +88,7 @@ export async function runTier4(
         ? await waitForImpervaResolution(page, remaining, url)
         : challengeType === "akamai"
           ? await waitForAkamaiResolution(page, remaining, url)
-          : await waitForChallengeResolution(page, remaining, url)
+          : await waitForChallengeResolution(page, remaining, url, () => mainResponse.headers)
 
     if (resolution !== "ok") {
       return {
@@ -136,7 +128,7 @@ export async function runTier4(
       }
     }
 
-    if (isCloudflarePage(html, {})) {
+    if (isCloudflarePage(html, mainResponse.headers)) {
       return {
         tier: 4,
         status: "blocked",
@@ -163,13 +155,13 @@ export async function runTier4(
       }
     }
 
-    if (isBlocked(statusCode, html)) {
-      return { tier: 4, status: "blocked", durationMs: Date.now() - start, reason: `http-${statusCode}` }
+    if (isBlocked(mainResponse.status, html)) {
+      return { tier: 4, status: "blocked", durationMs: Date.now() - start, reason: `http-${mainResponse.status}` }
     }
 
     const cookies: Cookie[] = toCookies(await proxyContext.cookies())
 
-    const captured = await captureResponse(mainResponseHolder.value)
+    const captured = await captureResponse(mainResponse.response)
 
     return {
       tier: 4,
@@ -180,7 +172,7 @@ export async function runTier4(
       ...captured,
       cookies,
       userAgent: await page.evaluate(() => navigator.userAgent).catch(() => FINGERPRINT.userAgent),
-      statusCode,
+      statusCode: mainResponse.status,
       captchasSolved: captchasSolved.length > 0 ? captchasSolved : undefined,
     }
   } catch (err) {

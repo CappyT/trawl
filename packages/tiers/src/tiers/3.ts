@@ -15,8 +15,9 @@ import {
 } from "../utils/detect"
 import { normalizeHtml } from "../utils/html"
 import { waitForImpervaResolution } from "../utils/impervaWait"
+import { trackMainDocumentResponses } from "../utils/mainResponse"
 import { isHardNetworkFailure } from "../utils/network"
-import { captureResponse, isTextContentType, type MinimalResponse } from "../utils/response"
+import { captureResponse, isTextContentType } from "../utils/response"
 import type { RouteLike } from "../utils/sanitize"
 import { routeContinueOverrides } from "../utils/sanitize"
 
@@ -64,17 +65,7 @@ export async function runTier3(
       })
     }
 
-    let statusCode = 200
-    const mainResponseHolder: { value?: MinimalResponse } = {}
-    page.on("response", (res: MinimalResponse) => {
-      try {
-        const resUrl = res.url()
-        if (resUrl === url || resUrl.startsWith(url.replace(/\/$/, ""))) {
-          statusCode = res.status()
-          if (!mainResponseHolder.value) mainResponseHolder.value = res
-        }
-      } catch {}
-    })
+    const mainResponse = trackMainDocumentResponses(page)
 
     // CF challenges can trigger sub-navigations that throw "navigation interrupted" —
     // we catch those so we can continue. Hard failures (DNS, connection refused) are
@@ -100,7 +91,7 @@ export async function runTier3(
         ? await waitForImpervaResolution(page, remaining, url)
         : challengeType === "akamai"
           ? await waitForAkamaiResolution(page, remaining, url)
-          : await waitForChallengeResolution(page, remaining, url)
+          : await waitForChallengeResolution(page, remaining, url, () => mainResponse.headers)
 
     if (resolution !== "ok") {
       return {
@@ -150,7 +141,7 @@ export async function runTier3(
       return { tier: 3, status: "error", durationMs: Date.now() - start, reason: errMsg }
     }
 
-    if (isCloudflarePage(html, {})) {
+    if (isCloudflarePage(html, mainResponse.headers)) {
       const pageTitle = await page.title().catch(() => "?")
       const pageUrl = page.url()
       console.log(`[tier3] cloudflare-persistent: url="${pageUrl}" title="${pageTitle}" html=${html.length}b`)
@@ -171,13 +162,13 @@ export async function runTier3(
       return { tier: 3, status: "blocked", durationMs: Date.now() - start, reason: "akamai-persistent" }
     }
 
-    if (isBlocked(statusCode, html)) {
-      return { tier: 3, status: "blocked", durationMs: Date.now() - start, reason: `http-${statusCode}` }
+    if (isBlocked(mainResponse.status, html)) {
+      return { tier: 3, status: "blocked", durationMs: Date.now() - start, reason: `http-${mainResponse.status}` }
     }
 
     const cookies: Cookie[] = toCookies(await freshCtx.cookies())
 
-    const captured = await captureResponse(mainResponseHolder.value)
+    const captured = await captureResponse(mainResponse.response)
 
     return {
       tier: 3,
@@ -188,7 +179,7 @@ export async function runTier3(
       ...captured,
       cookies,
       userAgent: await page.evaluate(() => navigator.userAgent).catch(() => FINGERPRINT.userAgent),
-      statusCode,
+      statusCode: mainResponse.status,
       captchasSolved: captchasSolved.length > 0 ? captchasSolved : undefined,
     }
   } catch (err) {
