@@ -1,5 +1,5 @@
 import type { BrowserHandle } from "@trawl/browser"
-import { FINGERPRINT, newFreshContext } from "@trawl/browser"
+import { closeTemporaryContext, FINGERPRINT, newFreshContext } from "@trawl/browser"
 import type { Cookie, TierResult } from "@trawl/types"
 import { solvePageCaptchas } from "../solvers"
 import { waitForAkamaiResolution } from "../utils/akamaiWait"
@@ -49,10 +49,15 @@ export async function runTier3(
   // engine state) that CF's behavioral analysis scores as suspicious — resulting in 40s
   // challenge evaluation. A fresh context with no prior state gets managed-mode treatment:
   // CF evaluates in under 1s and the challenge resolves in 3-4s total.
-  const freshCtx = await newFreshContext(handle.browser, { proxy: proxyUrl })
-  const page = await freshCtx.newPage()
+  let freshCtx: Awaited<ReturnType<typeof newFreshContext>> | undefined
 
   try {
+    freshCtx = await newFreshContext(handle.browser, {
+      proxy: proxyUrl,
+      onCreated: handle.noteTemporaryContext,
+      requestReplacement: handle.requestBrowserReplacement,
+    })
+    const page = await freshCtx.newPage()
     if ((extraHeaders && Object.keys(extraHeaders).length > 0) || method === "POST") {
       await page.route(url, (route: RouteLike) => {
         route.continue(routeContinueOverrides(route, extraHeaders, method, body))
@@ -194,10 +199,8 @@ export async function runTier3(
       reason: err instanceof Error ? err.message : String(err),
     }
   } finally {
-    await page.close().catch(() => {})
-    // Bound context.close() with a timeout — Camoufox/Firefox occasionally hangs on
-    // close when a content process is wedged, leaking the process until the next
-    // browser recycle. 5s is well above the typical <500ms close path.
-    await Promise.race([freshCtx.close(), new Promise<void>((resolve) => setTimeout(resolve, 5000))]).catch(() => {})
+    // Closing the context closes all of its pages. If Firefox wedges during cleanup,
+    // ask the pool to replace this browser as soon as the lease is released.
+    await closeTemporaryContext(freshCtx, handle.requestBrowserReplacement, "tier3 context cleanup timed out")
   }
 }

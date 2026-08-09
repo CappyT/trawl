@@ -386,7 +386,7 @@ for pool and mounted-file examples.
 | -------------------------------- | ------------------------ | ----------------------------------------------------------------------------------- |
 | `BROWSER_POOL_SIZE`              | `3`                      | Warm Camoufox Firefox instances                                                     |
 | `BROWSER_ACQUIRE_TIMEOUT_MS`     | `15000`                  | How long `acquire()` polls for a free browser before HTTP 429 is returned           |
-| `BROWSER_RECYCLE_AFTER_CONTEXTS` | `8`                      | Recycle a browser after this many `blocked`/`needs-js` outcomes; set `0` to disable |
+| `BROWSER_RECYCLE_AFTER_CONTEXTS` | `8`                      | Rolling-replace after this many Tier 3/4 contexts; set `0` to disable               |
 | `BROWSER_CONTENT_PROCESSES`      | `2`                      | Cap Firefox content processes per browser (`dom.ipc.processCount`); lowers RAM/CPU  |
 | `SESSION_TTL_SECONDS`            | `3600`                   | Redis session cache TTL (seconds)                                                   |
 | `REDIS_URL`                      | `redis://localhost:6379` | Redis connection string                                                             |

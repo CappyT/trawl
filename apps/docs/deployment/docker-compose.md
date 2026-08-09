@@ -72,7 +72,7 @@ See [Standalone Containers → Older CPUs & Synology NAS](/deployment/standalone
 | -------------------------------- | -------------------- | ----------------------------------------------------------------------- |
 | `BROWSER_POOL_SIZE`              | `3`                  | Warm browsers; supplied minimal/cached Compose files override this to `1` |
 | `BROWSER_ACQUIRE_TIMEOUT_MS`     | `15000`              | How long `acquire()` polls for a free browser before returning HTTP 429 |
-| `BROWSER_RECYCLE_AFTER_CONTEXTS` | `8`                  | Restart after this many blocked/needs-js outcomes; set `0` to disable   |
+| `BROWSER_RECYCLE_AFTER_CONTEXTS` | `8`                  | Rolling-replace after this many Tier 3/4 contexts; `0` disables it      |
 | `REDIS_URL`                      | `redis://redis:6379` | Redis connection (set automatically in compose)                         |
 | `PROXY_URL`                      | —                    | Optional Tier 3 datacenter proxy or pool                                |
 | `RESIDENTIAL_PROXY_URL`          | —                    | Enables Tier 4 proxy escalation                                         |

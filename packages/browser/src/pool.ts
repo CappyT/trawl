@@ -70,6 +70,7 @@ interface PoolEntry extends PoolBrowser {
   stallAt?: number
   restartReason?: string
   restarting?: boolean
+  replacementRequested?: string
   fingerprint: (typeof FINGERPRINT_POOL)[number]
 }
 
@@ -90,6 +91,8 @@ export class BrowserPool {
   private healthInterval?: ReturnType<typeof setInterval>
   private abandonedLaunches = 0
   private maxAbandonedLaunches: number
+  private replacementRunning = false
+  private shuttingDown = false
 
   constructor({
     poolSize,
@@ -316,9 +319,13 @@ export class BrowserPool {
           fingerprint: entry.fingerprint,
           // Captured lease: a reclaimed request that resumes later must not attribute its
           // failure to the replacement browser now occupying this entry.
-          noteTemporaryContext: ((lease: number) => (reason: string) => {
+          noteTemporaryContext: ((lease: number) => () => {
             if (entry.lease !== lease) return
-            this.noteTemporaryContext(entry, reason)
+            this.noteTemporaryContext(entry)
+          })(entry.lease),
+          requestBrowserReplacement: ((lease: number) => (reason: string) => {
+            if (entry.lease !== lease) return
+            this.requestRollingReplacement(entry, reason)
           })(entry.lease),
         })
         return true
@@ -350,15 +357,79 @@ export class BrowserPool {
     return available[0]
   }
 
-  private noteTemporaryContext(entry: PoolEntry, reason: string): void {
+  private noteTemporaryContext(entry: PoolEntry): void {
     if (this.recycleAfterTemporaryContexts <= 0) return
-    // Skip if the entry is already being recycled — avoids incrementing the counter
-    // against a dead entry and racing with the in-flight restartEntry.
-    if (entry.restarting) return
-
     entry.temporaryContextUses++
     if (entry.temporaryContextUses >= this.recycleAfterTemporaryContexts) {
-      entry.restartReason = `${reason}; ${entry.temporaryContextUses} temporary contexts used`
+      this.requestRollingReplacement(entry, `${entry.temporaryContextUses} temporary contexts created`)
+    }
+  }
+
+  private requestRollingReplacement(entry: PoolEntry, reason: string): void {
+    if (entry.restarting) return
+    entry.replacementRequested ??= reason
+    if (!entry.busy) void this.runNextRollingReplacement()
+  }
+
+  // Periodic recycling is rolling: the existing browser remains usable while its
+  // replacement starts. A pool-wide lock bounds the temporary peak to one browser.
+  private async runNextRollingReplacement(): Promise<void> {
+    if (this.replacementRunning || this.shuttingDown) return
+    const entry = this.entries.find((candidate) => candidate.replacementRequested && !candidate.restarting)
+    if (!entry) return
+    this.replacementRunning = true
+    const reason = entry.replacementRequested as string
+    entry.replacementRequested = undefined
+    console.warn(`[pool] browser ${entry.id} warming replacement: ${reason}`)
+
+    let replacement: { browser: Browser; context: BrowserContext } | undefined
+    try {
+      if (this.abandonedLaunches >= this.maxAbandonedLaunches) {
+        throw new Error(`${this.abandonedLaunches} launches already abandoned; not starting another until one settles`)
+      }
+      replacement = await this.launchWithin(entry.fingerprint, this.launchTimeoutMs)
+
+      // Acquires continue during the launch. Wait to swap until the current lease is
+      // released, without marking the entry unavailable in the meantime.
+      while (entry.busy && !this.shuttingDown) {
+        await new Promise((resolve) => setTimeout(resolve, this.pollIntervalMs))
+      }
+      if (this.shuttingDown) return
+
+      const retiredBrowser = entry.browser
+      const retiredContext = entry.context
+      const pendingPageCloses = entry.pendingPageCloses
+      entry.browser = replacement.browser
+      entry.context = replacement.context
+      replacement = undefined
+      entry.pendingPageCloses = undefined
+      entry.temporaryContextUses = 0
+      // Contexts created while this replacement was warming belong to the browser
+      // being retired. They may have re-asserted the threshold request, but the new
+      // browser starts clean and must not immediately replace itself again.
+      entry.replacementRequested = undefined
+      entry.restartCount++
+      entry.healthy = true
+      entry.lease++
+      console.log(`[pool] browser ${entry.id} rolling replacement installed (total: ${entry.restartCount})`)
+
+      await settleWithin(pendingPageCloses ? () => pendingPageCloses : undefined, this.closeTimeoutMs)
+      await settleWithin(() => retiredContext?.close(), this.closeTimeoutMs)
+      await settleWithin(() => retiredBrowser?.close(), this.closeTimeoutMs)
+    } catch (err) {
+      // A failed warm-up never disturbs the browser currently serving the entry.
+      entry.replacementRequested ??= reason
+      console.error(`[pool] browser ${entry.id} failed to warm replacement:`, err)
+    } finally {
+      if (replacement) {
+        await settleWithin(() => replacement?.context?.close(), this.closeTimeoutMs)
+        await settleWithin(() => replacement?.browser?.close(), this.closeTimeoutMs)
+      }
+      this.replacementRunning = false
+      // Do not spin immediately on a failed launch. Health checks and subsequent
+      // releases provide bounded retry opportunities.
+      const next = this.entries.find((candidate) => candidate.replacementRequested && candidate !== entry)
+      if (next) void this.runNextRollingReplacement()
     }
   }
 
@@ -388,6 +459,8 @@ export class BrowserPool {
       // acquiring this entry in the window before the browser is actually torn down.
       // restartEntry waits on pendingPageCloses itself.
       void this.restartEntry(entry, reason)
+    } else if (entry.replacementRequested) {
+      void this.runNextRollingReplacement()
     }
   }
 
@@ -421,6 +494,7 @@ export class BrowserPool {
         await this.restartEntry(entry, "browser disconnected")
       } else {
         entry.healthy = true
+        if (entry.replacementRequested) void this.runNextRollingReplacement()
       }
     }
   }
@@ -574,6 +648,7 @@ export class BrowserPool {
   }
 
   async shutdown(): Promise<void> {
+    this.shuttingDown = true
     if (this.healthInterval) {
       clearInterval(this.healthInterval)
       delete this.healthInterval
@@ -588,27 +663,68 @@ export class BrowserPool {
   }
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: preserves the caller's Playwright or Patchright context type
-export const newFreshContext = async (browser: any, options?: { proxy?: string }): Promise<any> => {
+// These preserve the caller's Playwright or Patchright types; the two libraries are
+// structurally incompatible even though both expose the same runtime methods.
+// biome-ignore lint/suspicious/noExplicitAny: see comment above
+type FreshBrowser = any
+// biome-ignore lint/suspicious/noExplicitAny: see comment above
+type FreshContext = any
+export const newFreshContext = async (
+  browser: FreshBrowser,
+  options?: { proxy?: string; onCreated?: () => void; requestReplacement?: (reason: string) => void },
+): Promise<FreshContext> => {
   const context = await browser.newContext({
     viewport: null,
     ...(options?.proxy ? { proxy: toPlaywrightProxy(options.proxy) } : {}),
   })
-  await context.addInitScript(() => {
-    window.onerror = () => true
-    window.addEventListener(
-      "unhandledrejection",
-      (e: PromiseRejectionEvent) => {
-        e.preventDefault()
-      },
-      true,
+  options?.onCreated?.()
+  try {
+    await context.addInitScript(() => {
+      window.onerror = () => true
+      window.addEventListener(
+        "unhandledrejection",
+        (e: PromiseRejectionEvent) => {
+          e.preventDefault()
+        },
+        true,
+      )
+      const _orig = Element.prototype.attachShadow
+      Element.prototype.attachShadow = function (init: ShadowRootInit) {
+        const r = _orig.call(this, init)
+        Object.defineProperty(this, "shadowRootUnl", { configurable: true, value: r })
+        return r
+      }
+    })
+    return context
+  } catch (err) {
+    await closeTemporaryContext(
+      context,
+      options?.requestReplacement,
+      "temporary context initialization cleanup timed out",
+      CLOSE_TIMEOUT_MS,
     )
-    const _orig = Element.prototype.attachShadow
-    Element.prototype.attachShadow = function (init: ShadowRootInit) {
-      const r = _orig.call(this, init)
-      Object.defineProperty(this, "shadowRootUnl", { configurable: true, value: r })
-      return r
-    }
+    throw err
+  }
+}
+
+export const closeTemporaryContext = async (
+  context: { close: AsyncAction } | undefined,
+  requestReplacement?: (reason: string) => void,
+  reason = "temporary context cleanup timed out",
+  timeoutMs = 5_000,
+): Promise<void> => {
+  if (!context) return
+  let settled = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  await Promise.race([
+    settle(() => context.close()).then(() => {
+      settled = true
+    }),
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, timeoutMs)
+    }),
+  ]).finally(() => {
+    if (timer) clearTimeout(timer)
   })
-  return context
+  if (!settled) requestReplacement?.(reason)
 }

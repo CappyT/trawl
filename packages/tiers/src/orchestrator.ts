@@ -27,14 +27,6 @@ export class ScrapeError extends Error {
   }
 }
 
-// True when a Tier 3/4 result indicates the browser's profile was actively rejected
-// by the upstream (CF / Imperva / etc.). On these outcomes the orchestrator flags the
-// pool for a future recycle; on every other outcome (success, transient error, timeout)
-// the browser is kept warm so cookies + cf_clearance survive.
-export function shouldFlagForRecycle(status: TierResult["status"]): boolean {
-  return status === "blocked" || status === "needs-js"
-}
-
 export interface OrchestratorDeps {
   acquireBrowser(domain: string, budgetMs?: number): Promise<BrowserHandle>
   releaseBrowser(id: number, lease?: number): void
@@ -158,14 +150,6 @@ export async function scrape(req: ScrapeRequest, deps: OrchestratorDeps): Promis
       const remaining3 = maxTimeout - (Date.now() - totalStart)
       t3 = await runTier3(req.url, handle, remaining3, proxy3, sanitizedHeaders, req.method, req.body)
 
-      // Only flag the pool for a recycle when the upstream actively rejected the
-      // browser's profile ("blocked"/"needs-js"). Successful solves preserve cookies,
-      // cf_clearance, and TLS fingerprint — recycling after success would force a
-      // costly cold start on the next request to the same domain.
-      if (shouldFlagForRecycle(t3.status)) {
-        handle.noteTemporaryContext?.(`tier3 ${t3.status}`)
-      }
-
       const pool = deps.proxyPool
       if (t3.status !== "blocked" || req.proxy || !proxy3 || !pool || attempt + 1 >= MAX_PROXY_ATTEMPTS) break
       pool.markBad(proxy3)
@@ -224,12 +208,6 @@ export async function scrape(req: ScrapeRequest, deps: OrchestratorDeps): Promis
       console.log(`[orchestrator] Tier 4 via residential proxy: ${proxy4.replace(/\/\/[^@]*@/, "//**@")}`)
       const remaining4 = maxTimeout - (Date.now() - totalStart)
       t4 = await runTier4Lazy(req.url, handle, remaining4, proxy4, sanitizedHeaders, req.method, req.body)
-
-      // Mirror Tier 3's recycle-on-suspect policy — only flag when the upstream
-      // explicitly rejected the browser's profile.
-      if (shouldFlagForRecycle(t4.status)) {
-        handle.noteTemporaryContext?.(`tier4 ${t4.status}`)
-      }
 
       const pool = deps.residentialProxyPool
       if (t4.status !== "blocked" || req.proxy || !pool || attempt + 1 >= MAX_PROXY_ATTEMPTS) break
