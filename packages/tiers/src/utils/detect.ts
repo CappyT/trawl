@@ -9,7 +9,8 @@ export type ChallengeType =
   | "none"
 
 export function isCloudflarePage(html: string, headers: Record<string, string>): boolean {
-  if (headers["cf-mitigated"]) return true
+  const cfMitigated = Object.entries(headers).find(([name]) => name.toLowerCase() === "cf-mitigated")?.[1]
+  if (cfMitigated?.toLowerCase() === "challenge") return true
   if (/<title>[^<]*(just a moment|ddos-guard|please wait|checking|attention required)[^<]*<\/title>/i.test(html))
     return true
   if (/checking your browser/i.test(html)) return true
@@ -20,6 +21,11 @@ export function isCloudflarePage(html: string, headers: Record<string, string>):
   if (/id="cf-challenge-running"/i.test(html)) return true
   // CF Turnstile interstitial wrapper
   if (/id="turnstile-wrapper"/i.test(html)) return true
+  // Active challenge orchestration markers. Unlike the passive telemetry markers
+  // below, these only occur while Cloudflare is serving an interstitial.
+  if (/_cf_chl_opt/i.test(html)) return true
+  if (/id=["']challenge-form["']/i.test(html)) return true
+  if (/orchestrate\/chl_page/i.test(html)) return true
   // DDoS-Guard
   if (/ddos-guard\.net|\.ddos-guard\.net/i.test(html)) return true
   // CF firewall/WAF deny page (error 1020 and friends) — static "blocked" page, not a
@@ -35,7 +41,8 @@ export function isCloudflarePage(html: string, headers: Record<string, string>):
   // bot-management telemetry. Matching on the marker alone flags real pages as blocked.
   // The actual challenge stub is always near-empty (nothing else can render before the
   // challenge resolves), so gate on page size too.
-  if (html.length < 3000 && /__CF\$cv\$params/i.test(html)) return true
+  if (html.length < 3000 && /__CF\$cv\$params|\/cdn-cgi\/challenge-platform\/[^"']*jsd\/main\.js/i.test(html))
+    return true
   return false
 }
 

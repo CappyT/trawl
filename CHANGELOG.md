@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Keep browser-tier status, headers, content type, and raw body aligned with the latest main-frame navigation response across redirects, and prevent persistent Cloudflare challenges from being returned as successful rendered pages (#53).
 - Translate Prowlarr's serialized `headers.contentType` metadata at the FlareSolverr `/v1` compatibility boundary and discard `contentLength`, allowing form POST requests to enter the scraper pipeline (#50).
 - Bound Camoufox memory growth by counting every Tier 3/4 temporary context and rolling-replacing browsers at `BROWSER_RECYCLE_AFTER_CONTEXTS`, while keeping existing capacity available during warm-up. Replacement launches are serialized, cleanup is timeout-bounded, and failed launches retain the usable browser (#52).
 
