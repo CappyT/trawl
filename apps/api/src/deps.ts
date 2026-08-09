@@ -22,18 +22,23 @@ const state: {
 
 export const getPool = () => state.pool
 
-export const initPool = async (): Promise<void> => {
+const initSessionCache = async (): Promise<void> => {
   try {
-    state.sessionCache = new SessionCache({
+    const sessionCache = new SessionCache({
       redisUrl: REDIS_URL,
       ttlSeconds: SESSION_TTL,
     })
+    await sessionCache.connect()
+    state.sessionCache = sessionCache
     console.log("[api] session cache connected  (Tier 2 fast-path enabled)")
   } catch (err) {
+    state.sessionCache = undefined
     console.warn("[api] session cache unavailable — Tier 2 disabled:", err instanceof Error ? err.message : err)
   }
+}
 
-  state.pool = new BrowserPool({
+export const initPool = async (): Promise<void> => {
+  const pool = new BrowserPool({
     poolSize: POOL_SIZE,
     acquireTimeoutMs: ACQUIRE_TIMEOUT_MS,
     recycleAfterTemporaryContexts: RECYCLE_AFTER_TEMPORARY_CONTEXTS,
@@ -42,8 +47,12 @@ export const initPool = async (): Promise<void> => {
     closeTimeoutMs: CLOSE_TIMEOUT_MS,
     launchTimeoutMs: LAUNCH_TIMEOUT_MS,
   })
-  await state.pool.init()
-  state.pool.startHealthCheck()
+  // Publish the pool before its first await. Tier 1 can serve immediately and
+  // browser-backed requests can wait in acquire() while capacity warms.
+  state.pool = pool
+
+  await Promise.all([initSessionCache(), pool.init()])
+  pool.startHealthCheck()
 
   console.log(`[api] ready — all ${POOL_SIZE} browser${POOL_SIZE === 1 ? "" : "s"} warm`)
 }
@@ -51,13 +60,15 @@ export const initPool = async (): Promise<void> => {
 export const getDeps = (): OrchestratorDeps => {
   if (!state.pool) throw new Error("pool not ready")
   const p = state.pool
-  const sc = state.sessionCache
   return {
     acquireBrowser: (d: string, budgetMs?: number) => p.acquire(d, budgetMs),
     releaseBrowser: (id: number, lease?: number) => p.release(id, lease),
-    loadSession: (d: string) => (sc ? sc.load(d).catch(() => undefined) : Promise.resolve(undefined)),
-    saveSession: (d: string, data: SessionData) => (sc ? sc.save(d, data).catch(() => {}) : Promise.resolve()),
-    invalidateSession: (d: string) => (sc ? sc.invalidate(d).catch(() => {}) : Promise.resolve()),
+    loadSession: (d: string) =>
+      state.sessionCache ? state.sessionCache.load(d).catch(() => undefined) : Promise.resolve(undefined),
+    saveSession: (d: string, data: SessionData) =>
+      state.sessionCache ? state.sessionCache.save(d, data).catch(() => {}) : Promise.resolve(),
+    invalidateSession: (d: string) =>
+      state.sessionCache ? state.sessionCache.invalidate(d).catch(() => {}) : Promise.resolve(),
     proxyPool,
     residentialProxyPool,
   }

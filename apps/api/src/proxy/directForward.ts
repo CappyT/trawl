@@ -192,8 +192,9 @@ async function readHttpResponse(
   socket: net.Socket,
   url: string,
   skipChallengeDetection: boolean,
+  initialResponseBytes: Buffer = Buffer.alloc(0),
 ): Promise<ForwardResult> {
-  const headerBuf = await readUpTo(socket, MAX_HEADER_BYTES, "\r\n\r\n")
+  const headerBuf = await readUpTo(socket, MAX_HEADER_BYTES, "\r\n\r\n", initialResponseBytes)
   if (!headerBuf.found) {
     socket.destroy()
     return { mode: "error", error: new Error("upstream response headers exceeded 64 KiB") }
@@ -208,6 +209,13 @@ async function readHttpResponse(
     return { mode: "error", error: new Error(`upstream returned non-HTTP status line: ${statusLine}`) }
   }
   const status = Number(statusMatch[1])
+
+  // Informational responses (most commonly Cloudflare's 103 Early Hints) are
+  // followed by another HTTP response on the same connection. Do not treat the
+  // final response headers/body as the body of the 1xx response.
+  if (status >= 100 && status < 200 && status !== 101) {
+    return readHttpResponse(socket, url, skipChallengeDetection, headerBuf.leftover)
+  }
 
   const headers: Record<string, string> = {}
   for (const line of lines.slice(1)) {
@@ -225,6 +233,25 @@ async function readHttpResponse(
   const contentType = headers["content-type"] ?? "application/octet-stream"
   const rawLen = headers["content-length"]
   const contentLength = rawLen ? Number(rawLen) : undefined
+
+  // Cloudflare defines `cf-mitigated: challenge` as an authoritative Challenge
+  // Page signal. Escalate as soon as the headers arrive instead of waiting for
+  // an unbounded/keep-alive response body to finish (or hit the 30s socket timeout).
+  // Body-based detection below remains the fallback for challenge variants that
+  // do not send this header.
+  if (!skipChallengeDetection && detectChallengeType("", headers) === "cloudflare-interstitial") {
+    socket.destroy()
+    return {
+      mode: "buffer",
+      status,
+      headers,
+      contentType,
+      contentLength,
+      body: Buffer.alloc(0),
+      challengeDetected: true,
+    }
+  }
+
   const streamDecision = shouldStream(url, contentLength, contentType)
 
   const isChunked = (headers["transfer-encoding"] ?? "").toLowerCase().includes("chunked")
@@ -331,14 +358,13 @@ async function readUpTo(
   socket: net.Socket,
   maxBytes: number,
   delimiter: string,
+  initial: Buffer = Buffer.alloc(0),
 ): Promise<{ found: boolean; text: string; leftover?: Buffer }> {
   return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = []
-    let total = 0
+    const chunks: Buffer[] = initial.length > 0 ? [initial] : []
+    let total = initial.length
 
-    const onData = (chunk: Buffer) => {
-      chunks.push(chunk)
-      total += chunk.length
+    const inspect = (): boolean => {
       const buf = Buffer.concat(chunks, total)
       const idx = buf.indexOf(delimiter)
       if (idx >= 0) {
@@ -351,13 +377,20 @@ async function readUpTo(
         const endIdx = idx + delimiter.length
         const leftover = endIdx < buf.length ? buf.subarray(endIdx) : undefined
         resolve({ found: true, text: buf.subarray(0, endIdx).toString("latin1"), leftover })
-        return
+        return true
       }
       if (total > maxBytes) {
         socket.off("data", onData)
         socket.off("error", onError)
         resolve({ found: false, text: buf.toString("latin1") })
+        return true
       }
+      return false
+    }
+    const onData = (chunk: Buffer) => {
+      chunks.push(chunk)
+      total += chunk.length
+      inspect()
     }
     const onError = (err: Error) => {
       socket.off("data", onData)
@@ -367,6 +400,7 @@ async function readUpTo(
 
     socket.on("data", onData)
     socket.once("error", onError)
+    if (!inspect()) socket.resume()
   })
 }
 

@@ -63,6 +63,40 @@ function makeFactory() {
 }
 
 describe("BrowserPool recycling", () => {
+  test("publishes the first browser before warming remaining capacity concurrently", async () => {
+    const { factory: baseFactory } = makeFactory()
+    let activeLaunches = 0
+    let maxActiveLaunches = 0
+    let releaseFirst: (() => void) | undefined
+    let releaseRest: (() => void) | undefined
+    const firstGate = new Promise<void>((resolve) => (releaseFirst = resolve))
+    const restGate = new Promise<void>((resolve) => (releaseRest = resolve))
+    let launchNumber = 0
+    const factory = async () => {
+      const current = launchNumber++
+      activeLaunches++
+      maxActiveLaunches = Math.max(maxActiveLaunches, activeLaunches)
+      await (current === 0 ? firstGate : restGate)
+      activeLaunches--
+      return baseFactory()
+    }
+    const pool = createPool({ poolSize: 3, browserFactory: factory, acquireTimeoutMs: 250 })
+
+    const initializing = pool.init()
+    await waitFor(() => maxActiveLaunches === 1)
+    releaseFirst?.()
+    await waitFor(() => pool.getStats().available === 1)
+    await waitFor(() => maxActiveLaunches === 2)
+
+    const handle = await pool.acquire("example.com")
+    pool.release(handle.id, handle.lease)
+    expect(maxActiveLaunches).toBe(2)
+
+    releaseRest?.()
+    await initializing
+    expect(pool.getStats().available).toBe(3)
+  })
+
   test("launch timeout diagnoses outbound network and GeoIP availability", async () => {
     const pool = createPool({
       poolSize: 1,

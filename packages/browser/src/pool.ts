@@ -143,7 +143,9 @@ export class BrowserPool {
   }
 
   async init(): Promise<void> {
-    for (let i = 0; i < this.poolSize; i++) {
+    if (this.poolSize <= 0) return
+
+    const launch = async (i: number) => {
       // Pick a fingerprint for this instance; the picked OS drives the browser's
       // navigator.platform, locale, timezone, and the HTTP UA the orchestrator sends.
       // Shuffled pool (not sequential) so 4 browsers don't all get the same fingerprint.
@@ -164,6 +166,27 @@ export class BrowserPool {
         fingerprint,
       })
       console.log(`[pool] browser ${i + 1}/${this.poolSize} ready (UA=${fingerprint.platform})`)
+    }
+
+    // Camoufox performs one-time shared addon setup during its first launch; racing
+    // that setup can expose a half-extracted addon to sibling launches. Publish the
+    // first browser immediately, then warm the remaining capacity concurrently.
+    try {
+      await launch(0)
+    } catch (error) {
+      await this.shutdown()
+      throw error
+    }
+
+    const launches = Array.from({ length: Math.max(0, this.poolSize - 1) }, (_, i) => launch(i + 1))
+
+    const results = await Promise.allSettled(launches)
+    const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected")
+    if (failure) {
+      // Successful siblings were published progressively. Close them before
+      // surfacing a failed startup so tests and supervised restarts do not leak.
+      await this.shutdown()
+      throw failure.reason
     }
   }
 

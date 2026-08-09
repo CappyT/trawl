@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Cold-start performance milestone:** TRAWL's complete first request, including browser launch, is now nearly **4x faster** in like-for-like Docker benchmarks. Redis validation and browser warmup now run concurrently, Tier 0 becomes available immediately, and browser capacity is published progressively. Warm-request timings vary with browser state, session caching, and challenge behavior and are not included in this cold-start comparison.
+
 ### Fixed
+- Reduce cold-start latency by warming Redis alongside the browser pool, publishing the first browser immediately, warming the remaining browsers concurrently, and accepting Tier 0 proxy traffic during warmup. Unavailable Redis now disables Tier 2 promptly instead of delaying the first request. Tier 0 also handles informational HTTP responses correctly and escalates authoritative `cf-mitigated: challenge` headers immediately.
 - Keep browser-tier status, headers, content type, and raw body aligned with the latest main-frame navigation response across redirects, and prevent persistent Cloudflare challenges from being returned as successful rendered pages (#53).
 - Translate Prowlarr's serialized `headers.contentType` metadata at the FlareSolverr `/v1` compatibility boundary and discard `contentLength`, allowing form POST requests to enter the scraper pipeline (#50).
 - Bound Camoufox memory growth by counting every Tier 3/4 temporary context and rolling-replacing browsers at `BROWSER_RECYCLE_AFTER_CONTEXTS`, while keeping existing capacity available during warm-up. Replacement launches are serialized, cleanup is timeout-bounded, and failed launches retain the usable browser (#52).

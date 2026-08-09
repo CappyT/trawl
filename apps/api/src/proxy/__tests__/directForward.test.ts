@@ -1,4 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test"
+import { once } from "node:events"
+import net from "node:net"
 import { gzipSync } from "node:zlib"
 import { directForwardHttp } from "../directForward"
 
@@ -137,6 +139,43 @@ describe("directForwardHttp — Range / 206 Partial Content", () => {
 })
 
 describe("directForwardHttp — buffered by default", () => {
+  test("skips 103 Early Hints and escalates cf-mitigated without waiting for an open body", async () => {
+    const sockets = new Set<net.Socket>()
+    const hangingServer = net.createServer((socket) => {
+      sockets.add(socket)
+      socket.once("close", () => sockets.delete(socket))
+      socket.write(
+        "HTTP/1.1 103 Early Hints\r\nLink: </style.css>; rel=preload\r\n\r\n" +
+          "HTTP/1.1 403 Forbidden\r\nContent-Type: text/html\r\nCF-Mitigated: Challenge\r\nConnection: keep-alive\r\n\r\n",
+      )
+    })
+    hangingServer.listen(0, "127.0.0.1")
+    await once(hangingServer, "listening")
+    const address = hangingServer.address()
+    if (!address || typeof address === "string") throw new Error("test server did not bind a TCP port")
+
+    try {
+      const startedAt = performance.now()
+      const result = await directForwardHttp({
+        url: `http://127.0.0.1:${address.port}/challenge`,
+        method: "GET",
+        headers: {},
+        timeoutMs: 2_000,
+      })
+
+      expect(performance.now() - startedAt).toBeLessThan(500)
+      expect(result.mode).toBe("buffer")
+      if (result.mode !== "buffer") return
+      expect(result.status).toBe(403)
+      expect(result.challengeDetected).toBe(true)
+      expect(result.headers["cf-mitigated"]).toBe("Challenge")
+      expect(result.body.length).toBe(0)
+    } finally {
+      for (const socket of sockets) socket.destroy()
+      await new Promise<void>((resolve, reject) => hangingServer.close((error) => (error ? reject(error) : resolve())))
+    }
+  })
+
   test("buffers and de-chunks small HTML instead of treating it as a stream", async () => {
     const result = await directForwardHttp({
       url: `${baseUrl}/chunked-html`,
