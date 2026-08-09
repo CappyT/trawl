@@ -1,5 +1,5 @@
 import type { BrowserHandle } from "@trawl/browser"
-import { FINGERPRINT, newFreshContext } from "@trawl/browser"
+import { closeTemporaryContext, FINGERPRINT, newFreshContext } from "@trawl/browser"
 import type { Cookie, TierResult } from "@trawl/types"
 import { solvePageCaptchas } from "../solvers"
 import { waitForAkamaiResolution } from "../utils/akamaiWait"
@@ -51,7 +51,11 @@ export async function runTier4(
   const state: { proxyContext?: Awaited<ReturnType<typeof newFreshContext>> } = {}
 
   try {
-    const proxyContext = await newFreshContext(handle.browser, { proxy: proxyUrl })
+    const proxyContext = await newFreshContext(handle.browser, {
+      proxy: proxyUrl,
+      onCreated: handle.noteTemporaryContext,
+      requestReplacement: handle.requestBrowserReplacement,
+    })
     state.proxyContext = proxyContext
 
     const page = await proxyContext.newPage()
@@ -187,11 +191,6 @@ export async function runTier4(
       reason: err instanceof Error ? err.message : String(err),
     }
   } finally {
-    // Same timeout-bounded close as tier3 — see comment there.
-    if (state.proxyContext) {
-      await Promise.race([state.proxyContext.close(), new Promise<void>((resolve) => setTimeout(resolve, 5000))]).catch(
-        () => {},
-      )
-    }
+    await closeTemporaryContext(state.proxyContext, handle.requestBrowserReplacement, "tier4 context cleanup timed out")
   }
 }

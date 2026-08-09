@@ -67,10 +67,10 @@ When the timeout fires, both `/v1` and `/scrape` return **HTTP 429** with the Fl
 
 **Default:** `8`
 
-How many `blocked` / `needs-js` outcomes a pooled browser can produce before TRAWL restarts the full browser process. The recycle counter only increments when Tier 3 or Tier 4 reports the upstream actively rejected the browser's profile — successful solves preserve cookies, `cf_clearance`, and warm fingerprint state. This avoids the HTTP-429 storm that occurred when the pool preemptively recycled mid-flight (issue #17).
+How many Tier 3 or Tier 4 temporary contexts a pooled browser can create before TRAWL rolling-replaces the full browser process. Every context counts, regardless of whether the attempt succeeds, times out, errors, or is blocked. TRAWL warms one replacement while the existing browser remains available, installs it when the entry is idle, then closes the retired browser. This briefly raises the pool by one browser, and replacements are serialized pool-wide to bound that peak.
 
 ```ini
-BROWSER_RECYCLE_AFTER_CONTEXTS=8   # default - recycle after 8 blocked/needs-js outcomes
+BROWSER_RECYCLE_AFTER_CONTEXTS=8   # default - replace after 8 Tier 3/4 contexts
 BROWSER_RECYCLE_AFTER_CONTEXTS=0   # disable browser recycling entirely
 ```
 

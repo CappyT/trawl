@@ -126,11 +126,7 @@ describe("BrowserPool recycling", () => {
     expect(browsers).toHaveLength(1)
   })
 
-  test("successful acquires do NOT trigger recycle (recycle driven by orchestrator, not pool)", async () => {
-    // Documents the contract: the pool itself does NOT decide when to recycle based
-    // on temporary-context count. The orchestrator decides (by calling
-    // noteTemporaryContext only on blocked/needs-js outcomes). This test verifies
-    // that the pool, given N successful acquires, never recycles on its own.
+  test("counts every reported temporary context independent of outcome", async () => {
     const { factory, browsers } = makeFactory()
 
     const pool = createPool({
@@ -141,15 +137,76 @@ describe("BrowserPool recycling", () => {
 
     await pool.init()
 
-    // Simulate 10 "successful" Tier 3 attempts that the orchestrator does NOT flag.
-    // (No noteTemporaryContext calls.) Pool should never recycle.
-    for (let i = 0; i < 10; i++) {
+    for (const _outcome of ["success", "timeout"]) {
       const handle = await pool.acquire("example.com")
+      handle.noteTemporaryContext?.()
       pool.release(handle.id)
     }
 
-    expect(pool.getStats().restarts).toBe(0)
-    expect(browsers).toHaveLength(1)
+    await waitFor(() => pool.getStats().restarts === 1)
+    expect(browsers).toHaveLength(2)
+  })
+
+  test("pool size 1 stays acquirable while a replacement is launching", async () => {
+    const { factory: baseFactory } = makeFactory()
+    let finishLaunch: (() => void) | undefined
+    let launches = 0
+    const factory = async () => {
+      launches++
+      if (launches === 2) await new Promise<void>((resolve) => (finishLaunch = resolve))
+      return baseFactory()
+    }
+    const pool = createPool({
+      poolSize: 1,
+      recycleAfterTemporaryContexts: 1,
+      acquireTimeoutMs: 50,
+      browserFactory: factory,
+    })
+    await pool.init()
+    const first = await pool.acquire("example.com")
+    first.noteTemporaryContext?.()
+    pool.release(first.id, first.lease)
+    await waitFor(() => launches === 2)
+
+    const duringWarmup = await pool.acquire("example.com")
+    expect(pool.getStats().live).toBe(1)
+    // This context belongs to the incumbent that is about to be retired. It must not
+    // schedule a second replacement after the warmed browser is installed.
+    duringWarmup.noteTemporaryContext?.()
+    finishLaunch?.()
+    pool.release(duringWarmup.id, duringWarmup.lease)
+    await waitFor(() => pool.getStats().restarts === 1)
+    const afterInstall = await pool.acquire("example.com")
+    pool.release(afterInstall.id, afterInstall.lease)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(launches).toBe(2)
+  })
+
+  test("warms only one replacement across the pool", async () => {
+    const { factory: baseFactory } = makeFactory()
+    let finishFirstReplacement: (() => void) | undefined
+    let launches = 0
+    const factory = async () => {
+      launches++
+      if (launches === 3) await new Promise<void>((resolve) => (finishFirstReplacement = resolve))
+      return baseFactory()
+    }
+    const pool = createPool({ poolSize: 2, recycleAfterTemporaryContexts: 1, browserFactory: factory })
+    await pool.init()
+
+    const first = await pool.acquire("one.example")
+    const second = await pool.acquire("two.example")
+    first.noteTemporaryContext?.()
+    second.noteTemporaryContext?.()
+    pool.release(first.id, first.lease)
+    pool.release(second.id, second.lease)
+
+    await waitFor(() => launches === 3)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(launches).toBe(3)
+    finishFirstReplacement?.()
+    await waitFor(() => launches === 4)
+    await waitFor(() => pool.getStats().restarts === 2)
   })
 
   test("contentProcesses option is stored without crashing", async () => {
@@ -289,7 +346,7 @@ describe("BrowserPool wedge recovery", () => {
     expect(pool.getStats().available).toBe(1)
   })
 
-  test("a launch that never resolves fails the restart instead of hanging it", async () => {
+  test("a timed-out rolling replacement leaves the existing browser usable", async () => {
     let launches = 0
     const factory = async () => {
       launches++
@@ -330,13 +387,11 @@ describe("BrowserPool wedge recovery", () => {
     handle.noteTemporaryContext?.("tier4 blocked")
     pool.release(handle.id, handle.lease)
 
-    // Wait for the restart to actually be in flight (entry detached, no capacity) before
-    // asserting recovery — otherwise this passes on the pre-restart state and proves
-    // nothing.
-    await waitFor(() => pool.getStats().live === 0, 2000)
-    // The hung launch is then abandoned, `restarting` clears, and the next health-check
-    // tick retries the entry from scratch — so the pool heals rather than wedging here.
-    await waitFor(() => pool.getStats().live === 1, 3000)
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    expect(pool.getStats().live).toBe(1)
+    const stillUsable = await pool.acquire("example.com")
+    pool.release(stillUsable.id, stillUsable.lease)
+    await waitFor(() => pool.getStats().restarts === 1, 3000)
     await pool.shutdown()
   })
 

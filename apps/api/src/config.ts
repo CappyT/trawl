@@ -8,6 +8,8 @@ export const POOL_SIZE = Number(process.env.BROWSER_POOL_SIZE ?? "3")
 // Tune lower for fast-fail feedback in dev; tune higher for very heavy upstream targets.
 export const ACQUIRE_TIMEOUT_MS = Number(process.env.BROWSER_ACQUIRE_TIMEOUT_MS ?? "15000")
 export const SESSION_TTL = Number(process.env.SESSION_TTL_SECONDS ?? "3600")
+// Rolling-replace a browser after this many Tier 3/4 temporary contexts. Every
+// creation counts regardless of outcome; 0 disables periodic replacement.
 export const RECYCLE_AFTER_TEMPORARY_CONTEXTS = Number(process.env.BROWSER_RECYCLE_AFTER_CONTEXTS ?? "8")
 // Caps Firefox content processes per browser. Default `2` keeps thread/RAM footprint
 // minimal while still allowing CF/Imperva challenges to resolve. Raise if specific

@@ -115,7 +115,8 @@ export interface BrowserHandle {
   // biome-ignore lint/suspicious/noExplicitAny: see comment above
   browser: any
   fingerprint: BrowserFingerprint
-  noteTemporaryContext?: (reason: string) => void
+  noteTemporaryContext?: () => void
+  requestBrowserReplacement?: (reason: string) => void
 }
 
 // Per-request proxy override as it arrives at the API. Prowlarr's Cardigann flow
