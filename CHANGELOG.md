@@ -7,8 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-08-10
+
 ### Changed
 - **Cold-start performance milestone:** TRAWL's complete first request, including browser launch, is now nearly **4x faster** in like-for-like Docker benchmarks. Redis validation and browser warmup now run concurrently, Tier 0 becomes available immediately, and browser capacity is published progressively. Warm-request timings vary with browser state, session caching, and challenge behavior and are not included in this cold-start comparison.
+- Bump all application and internal package versions to `1.4.0`.
+- Update Biome to 2.5.7, Memoirist to 1.2.2, Nuxt to 4.5.2, and Nuxt SEO to 5.3.11. TypeScript remains on 5.9.3 for the Nuxt app and Playwright remains on 1.60.0 for Camoufox compatibility.
+- Update GitHub Actions to their current stable major releases and make the CI release gate read-only and reproducible.
+- Pin the runtime to Bun 1.3.14, Camoufox v152.0.4-beta.28, GeoLite2 City 2026.08.07, and Redis 8.8.1, with SHA-256 verification for downloaded browser/runtime data assets.
+- The remaining audit findings are confined to Nuxt/VitePress development and build-time dependency trees; no compatible upstream update is currently available for those transitive packages.
 
 ### Fixed
 - Support explicit non-root Docker users by baking the pinned uBlock Origin addon into both API image variants and using a writable temporary home directory. Document CA volume ownership and read-only container requirements (#60).
