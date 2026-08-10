@@ -42,6 +42,10 @@ RUN bun install --frozen-lockfile --production --omit=dev --linker=hoisted \
 FROM oven/bun:1.3.14 AS camoufox
 ENV CAMOUFOX_INSTALL_DIR=/opt/camoufox
 
+ARG UBO_VERSION=1.73.0
+ARG UBO_AMO_FILE_ID=4940584
+ARG UBO_SHA256=bccc51a773150af4af6e1fd62c7bfdeb7238b79ff2381b998fa9f2e38f64786a
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl unzip ca-certificates && rm -rf /var/lib/apt/lists/*
 
@@ -81,6 +85,19 @@ RUN curl -fsSL \
       -o /opt/camoufox/GeoLite2-City.mmdb && \
     [ "$(stat -c%s /opt/camoufox/GeoLite2-City.mmdb)" -gt 10000000 ] || \
       { echo "GeoLite2-City.mmdb download too small / failed"; exit 1; }
+
+# Bake uBlock Origin into Camoufox's expected addon directory. camoufox-js still
+# performs its normal addon registration at startup, but no runtime download or
+# extraction is needed (including when /opt/camoufox is read-only).
+RUN curl -fsSL \
+      "https://addons.mozilla.org/firefox/downloads/file/${UBO_AMO_FILE_ID}/ublock_origin-${UBO_VERSION}.xpi" \
+      -o /tmp/ubo.xpi && \
+    echo "${UBO_SHA256}  /tmp/ubo.xpi" | sha256sum --check --strict - && \
+    mkdir -p /opt/camoufox/addons/UBO && \
+    unzip -q /tmp/ubo.xpi -d /opt/camoufox/addons/UBO && \
+    test -f /opt/camoufox/addons/UBO/manifest.json && \
+    test "$(bun -e 'console.log(JSON.parse(await Bun.file("/opt/camoufox/addons/UBO/manifest.json").text()).version)')" = "${UBO_VERSION}" && \
+    rm /tmp/ubo.xpi
 
 # ── Stage 3: lean runtime (only API-required files) ────────────────────────────
 # debian:bookworm-slim replaces ubuntu:22.04 — same glibc family, ~50 MB smaller base.
@@ -148,6 +165,7 @@ COPY apps/api/         /app/apps/api/
 COPY package.json      /app/
 
 ENV CAMOUFOX_INSTALL_DIR=/opt/camoufox \
+    HOME=/tmp \
     # Safe Bun runtime knobs — all tested runtime-neutral (no behavior change).
     BUN_DISABLE_CJS=1 \
     BUN_DEBUG=0 \
