@@ -49,25 +49,22 @@ ARG UBO_SHA256=bccc51a773150af4af6e1fd62c7bfdeb7238b79ff2381b998fa9f2e38f64786a
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl unzip ca-certificates && rm -rf /var/lib/apt/lists/*
 
-# Pin Camoufox to v150.0.2-beta.25 (verified working). The camoufox-js `fetch` always
-# downloads the latest release, which broke in 152.x (browser binary no longer in the
-# zip — see Camoufox upstream release notes). Direct curl keeps builds reproducible.
-#
-# Asset naming: arm64 = alpha.25 build, x86_64 = alpha.26 rebuild (only x86_64 was
-# rebuilt in the v150.0.2-beta.25 release).
+# Pin the browser release and verify the architecture-specific asset before extracting it.
+# Direct downloads keep builds reproducible and avoid camoufox-js resolving "latest".
 ARG TARGETARCH
 RUN --mount=type=secret,id=GITHUB_TOKEN,env=GITHUB_TOKEN \
     case "$TARGETARCH" in \
-      amd64) RELEASE="alpha.26"; ZIP="camoufox-150.0.2-${RELEASE}-lin.x86_64.zip" ;; \
-      arm64) RELEASE="alpha.25"; ZIP="camoufox-150.0.2-${RELEASE}-lin.arm64.zip" ;; \
+      amd64) ZIP="camoufox-152.0.4-beta.28-lin.x86_64.zip"; SHA256="924f3109ccd6d47cd6a0384d67a345fadf975d48b6319f8dbbd5954c588982bd" ;; \
+      arm64) ZIP="camoufox-152.0.4-beta.28-lin.arm64.zip"; SHA256="3a105a2fc929e80a79b4b7fce2c93ed62c4fb2c877f3c1ed2a5d66a1c4fe968f" ;; \
       *) echo "unsupported arch: $TARGETARCH"; exit 1 ;; \
     esac && \
     curl -fsSL \
-      "https://github.com/daijro/camoufox/releases/download/v150.0.2-beta.25/${ZIP}" \
+      "https://github.com/daijro/camoufox/releases/download/v152.0.4-beta.28/${ZIP}" \
       -o /tmp/camoufox.zip && \
+    echo "${SHA256}  /tmp/camoufox.zip" | sha256sum --check --strict - && \
     unzip -q /tmp/camoufox.zip -d /opt/camoufox && \
     rm /tmp/camoufox.zip && \
-    printf '{"version":"150.0.2","release":"%s"}\n' "$RELEASE" > /opt/camoufox/version.json && \
+    printf '{"version":"152.0.4","release":"beta.28"}\n' > /opt/camoufox/version.json && \
     chmod -R 755 /opt/camoufox && \
     rm -rf /opt/camoufox/fonts/macos /opt/camoufox/fonts/windows
 
@@ -80,11 +77,12 @@ RUN --mount=type=secret,id=GITHUB_TOKEN,env=GITHUB_TOKEN \
 # Baking a verified copy into the image makes startup deterministic and removes the
 # runtime GitHub dependency + first-launch download latency. The size check fails the
 # build if the download is truncated, so a corrupt file can never be baked in.
+ARG GEOLITE_RELEASE=2026.08.07
+ARG GEOLITE_CITY_SHA256=5c32206cd9a67d3b8995e8ca010191a802e9cb06d3c089963f08b55deb1bd921
 RUN curl -fsSL \
-      "https://github.com/P3TERX/GeoLite.mmdb/releases/latest/download/GeoLite2-City.mmdb" \
+      "https://github.com/P3TERX/GeoLite.mmdb/releases/download/${GEOLITE_RELEASE}/GeoLite2-City.mmdb" \
       -o /opt/camoufox/GeoLite2-City.mmdb && \
-    [ "$(stat -c%s /opt/camoufox/GeoLite2-City.mmdb)" -gt 10000000 ] || \
-      { echo "GeoLite2-City.mmdb download too small / failed"; exit 1; }
+    echo "${GEOLITE_CITY_SHA256}  /opt/camoufox/GeoLite2-City.mmdb" | sha256sum --check --strict -
 
 # Bake uBlock Origin into Camoufox's expected addon directory. camoufox-js still
 # performs its normal addon registration at startup, but no runtime download or
