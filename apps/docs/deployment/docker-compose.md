@@ -66,6 +66,51 @@ services:
 See [Standalone Containers → Older CPUs & Synology NAS](/deployment/standalone#older-cpus-synology-nas) for how to tell if you need this, and the [README](https://github.com/germondai/trawl#docker-images-one-ghcr-package-two-tags) for the full tag comparison.
 :::
 
+## Run as a non-root user
+
+The image defaults to root for backwards compatibility, but supports an explicit numeric UID and
+GID. Camoufox and uBlock Origin are included under the read-only `/opt/camoufox` tree, while browser
+profiles and other temporary files use the writable `/tmp` directory.
+
+```yaml
+services:
+  trawl:
+    image: ghcr.io/germondai/trawl:latest
+    user: "1001:1001"
+    volumes:
+      - trawl_proxy_ca:/data/proxy-ca
+```
+
+The user must be able to write to the persistent CA volume. For a new named volume, initialize its
+ownership once before starting TRAWL:
+
+```bash
+docker run --rm -v trawl_proxy_ca:/data/proxy-ca alpine \
+  chown -R 1001:1001 /data/proxy-ca
+```
+
+Use the actual Compose-prefixed volume name shown by `docker volume ls` if it differs from
+`trawl_proxy_ca`. Bind mounts must likewise be owned by the configured UID/GID. Without write
+access, the MITM proxy cannot create or reuse its CA certificate and private key.
+
+For a read-only container filesystem, provide a writable tmpfs for browser profiles and keep the CA
+volume writable:
+
+```yaml
+services:
+  trawl:
+    image: ghcr.io/germondai/trawl:latest
+    user: "1001:1001"
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - trawl_proxy_ca:/data/proxy-ca
+```
+
+No supported persistent application data is stored in `/tmp`; sessions and cookies are managed by
+TRAWL and Redis.
+
 ## Environment variables
 
 | Variable                         | Default              | Description                                                             |
