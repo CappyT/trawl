@@ -31,18 +31,18 @@ Much faster and more reliable FlareSolverr & Byparr alternative and drop-in repl
   <table>
     <tr>
       <td width="30%" align="center" valign="middle">
-        <a href="https://go.nodemaven.com/germondaiGitHub" target="_blank">
-          <img width="720" height="300" alt="nodemaven" src="https://github.com/user-attachments/assets/5dbfaee7-7863-4a20-a4a0-eb9f7bf0a90a" />
+        <a href="https://go.nodemaven.com/germondaireadme" target="_blank">
+          <img width="760" height="280" alt="nodemaven" src="https://github.com/user-attachments/assets/5fe3b231-b712-42d1-bc70-23c934f1a0ef" />
         </a>
       </td>
       <td valign="middle">
-        <b><a href="https://go.nodemaven.com/germondaiGitHub" target="_blank">NodeMaven</a></b> - The most reliable proxy provider with the Highest Quality IP on the market. Best solution for automation, web scraping, SEO research, and social media management.<br><br>
-        <b>Why <a href="https://go.nodemaven.com/germondaiGitHub" target="_blank">NodeMaven</a>?</b><br>
+        <b><a href="https://go.nodemaven.com/germondaireadme" target="_blank">NodeMaven</a></b> - The most efficient proxy provider for Web Scrapping and Automation with the Highest Quality IP on the market.<br><br>
+        <b>Why <a href="https://go.nodemaven.com/germondaireadme" target="_blank">NodeMaven</a>?</b><br>
+        • ZIP targeting<br>
         • 99.9% uptime<br>
-        • Sticky sessions up to 7 days<br>
         • IP filtering: all proxies have fraud score <97%<br>
         • No KYC required<br>
-        • Cashback on traffic - burn GB and earn up to 10% back<br><br>
+        • Unique free tools: Proxy Bandwidth Checker, Meta Tag Checker, IP Lookup and others!<br><br>
         <b>Special codes for <a href="https://trawl.germondai.com" target="_blank">TRAWL</a> users:</b><br>
         • TRAWL35 - 35% off to Mobile and Residential Proxies<br>
         • TRAWL40 - 40% off to ISP (Static) Proxies
