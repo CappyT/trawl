@@ -6,13 +6,29 @@ export type ChallengeType =
   | "cap"
   | "imperva"
   | "akamai"
+  | "ddos-guard"
   | "none"
 
-export function isCloudflarePage(html: string, headers: Record<string, string>): boolean {
+// Cloudflare's own declaration that it is serving a challenge. Authoritative, unlike
+// every other check here, so it outranks the DDoS-Guard markers wherever the two meet.
+export function hasCloudflareChallengeHeader(headers: Record<string, string> = {}): boolean {
   const cfMitigated = Object.entries(headers).find(([name]) => name.toLowerCase() === "cf-mitigated")?.[1]
-  if (cfMitigated?.toLowerCase() === "challenge") return true
-  if (/<title>[^<]*(just a moment|ddos-guard|please wait|checking|attention required)[^<]*<\/title>/i.test(html))
-    return true
+  return cfMitigated?.toLowerCase() === "challenge"
+}
+
+export function isCloudflarePage(html: string, headers: Record<string, string>): boolean {
+  if (hasCloudflareChallengeHeader(headers)) return true
+  // Otherwise DDoS-Guard wins over the generic copy-text heuristics below: its
+  // interstitial says "Checking your browser before accessing", which they also match.
+  // This is an early return rather than ordering inside detectChallengeType() because
+  // tiers 3/4 call isCloudflarePage() directly for their persistence check.
+  if (hasDdosGuardChallenge(html, headers)) return false
+  // "ddos-guard" deliberately absent: DDoS-Guard is its own WAF with its own solve
+  // path (see hasDdosGuardChallenge / ddosGuardWait.ts). Matching it here routed it
+  // into the Cloudflare interstitial flow, which waits on cf_clearance and CF DOM
+  // markers that a DDoS-Guard page never emits — so it burned the whole timeout and
+  // then reported "cloudflare-persistent".
+  if (/<title>[^<]*(just a moment|please wait|checking|attention required)[^<]*<\/title>/i.test(html)) return true
   if (/checking your browser/i.test(html)) return true
   if (/enable javascript and cookies to continue/i.test(html)) return true
   if (/verify you are human/i.test(html)) return true
@@ -26,8 +42,6 @@ export function isCloudflarePage(html: string, headers: Record<string, string>):
   if (/_cf_chl_opt/i.test(html)) return true
   if (/id=["']challenge-form["']/i.test(html)) return true
   if (/orchestrate\/chl_page/i.test(html)) return true
-  // DDoS-Guard
-  if (/ddos-guard\.net|\.ddos-guard\.net/i.test(html)) return true
   // CF firewall/WAF deny page (error 1020 and friends) — static "blocked" page, not a
   // solvable JS challenge, but still needs to be recognized as CF so the orchestrator
   // reports tier failure and escalates instead of returning the block page as content
@@ -108,8 +122,40 @@ export function hasAkamaiChallenge(html: string, _headers: Record<string, string
   return false
 }
 
+// DDoS-Guard JS interstitial. The wall is a ~900-byte page that loads
+// /.well-known/ddos-guard/js-challenge/{index,view}.js plus check.ddos-guard.net/check.js,
+// shows "Checking your browser before accessing", and reloads into the real content once
+// the script has set the __ddg* cookies. A real browser executing real JS satisfies it
+// without challenge-specific logic, so — like Imperva — we detect the page and wait for
+// the cookie (see ddosGuardWait.ts).
+//
+// Every marker below is challenge-specific: the js-challenge asset paths, the
+// interstitial's own DOM ids, and its check.js. Deliberately NOT matched:
+//
+//   - `Server: ddos-guard` — present on every response DDoS-Guard fronts. Verified on
+//     annas-archive.gl, where the successful 200 and the 403 interstitial carry the
+//     identical header, so keying on it grades real content as a wall forever.
+//   - a bare `ddos-guard.net` mention — any page may link the provider. Size-gating it
+//     is not a fix: the gate is arbitrary, counts UTF-16 units rather than bytes, and
+//     still says nothing about the page being a challenge. The three markers above
+//     already cover the real interstitial (it carries all of them).
+export function hasDdosGuardChallenge(html: string, _headers: Record<string, string> = {}): boolean {
+  if (/\/\.well-known\/ddos-guard\/js-challenge\//i.test(html)) return true
+  if (/id=["']ddg-l10n-(title|description)["']|id=["']ddg-img-loading["']/i.test(html)) return true
+  if (/check\.ddos-guard\.net\/check\.js/i.test(html)) return true
+  return false
+}
+
 export function detectChallengeType(html: string, headers: Record<string, string> = {}): ChallengeType {
   if (hasTurnstile(html)) return "cloudflare-turnstile"
+  // The authoritative CF header outranks the DDoS-Guard markers, so this agrees with
+  // isCloudflarePage() on a page fronted by both. Grading it ddos-guard here while
+  // isCloudflarePage() said cloudflare sent tiers 3/4 to the DDoS-Guard waiter and
+  // then judged the outcome with the Cloudflare persistence check.
+  if (hasCloudflareChallengeHeader(headers)) return "cloudflare-interstitial"
+  // Otherwise DDoS-Guard precedes the Cloudflare check: its interstitial trips several
+  // of the generic copy-text heuristics inside isCloudflarePage().
+  if (hasDdosGuardChallenge(html, headers)) return "ddos-guard"
   if (isCloudflarePage(html, headers)) return "cloudflare-interstitial"
   if (hasImpervaChallenge(html, headers)) return "imperva"
   if (hasAkamaiChallenge(html, headers)) return "akamai"
@@ -125,11 +171,17 @@ export function isBlocked(status: number, html: string): boolean {
   if (isCloudflarePage(html, {})) return true
   if (hasImpervaChallenge(html)) return true
   if (hasAkamaiChallenge(html)) return true
+  if (hasDdosGuardChallenge(html)) return true
   return false
 }
 
 export function needsJs(html: string, headers: Record<string, string>): boolean {
-  return isCloudflarePage(html, headers) || hasImpervaChallenge(html, headers) || hasAkamaiChallenge(html, headers)
+  return (
+    isCloudflarePage(html, headers) ||
+    hasImpervaChallenge(html, headers) ||
+    hasAkamaiChallenge(html, headers) ||
+    hasDdosGuardChallenge(html, headers)
+  )
 }
 
 // Lean-body threshold per challenge type. When a known challenge returns a response
@@ -139,6 +191,8 @@ export function needsJs(html: string, headers: Record<string, string>): boolean 
 const LEAN_BODY_THRESHOLDS: Partial<Record<ChallengeType, number>> = {
   "cloudflare-interstitial": 3000,
   imperva: 5000,
+  // The AA wall measured 902 bytes; give the same headroom CF gets.
+  "ddos-guard": 3000,
 }
 
 // True if the response is a challenge wall (page access blocked) rather than a page
