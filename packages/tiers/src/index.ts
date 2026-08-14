@@ -10,6 +10,7 @@ export {
   detectChallengeType,
   hasAkamaiChallenge,
   hasDdosGuardChallenge,
+  hasAwsWafChallenge,
   hasHcaptcha,
   hasImpervaChallenge,
   hasRecaptcha,
