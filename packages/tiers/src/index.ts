@@ -9,6 +9,7 @@ export {
   type ChallengeType,
   detectChallengeType,
   hasAkamaiChallenge,
+  hasDdosGuardChallenge,
   hasHcaptcha,
   hasImpervaChallenge,
   hasRecaptcha,

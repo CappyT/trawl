@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-08-22
+
+### Changed
+- Bump all application and internal package versions to `1.4.2`.
+
+### Fixed
+- Detect and resolve DDoS-Guard JS interstitials without misclassifying them as Cloudflare challenges (#66).
+
 ## [1.4.1] - 2026-08-21
 
 ### Changed
