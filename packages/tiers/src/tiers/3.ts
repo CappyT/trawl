@@ -5,9 +5,11 @@ import { solvePageCaptchas } from "../solvers"
 import { waitForAkamaiResolution } from "../utils/akamaiWait"
 import { waitForChallengeResolution } from "../utils/challengeWait"
 import { toCookies } from "../utils/cookies"
+import { waitForDdosGuardResolution } from "../utils/ddosGuardWait"
 import {
   detectChallengeType,
   hasAkamaiChallenge,
+  hasDdosGuardChallenge,
   hasImpervaChallenge,
   isBlocked,
   isBrowserErrorPage,
@@ -91,7 +93,9 @@ export async function runTier3(
         ? await waitForImpervaResolution(page, remaining, url)
         : challengeType === "akamai"
           ? await waitForAkamaiResolution(page, remaining, url)
-          : await waitForChallengeResolution(page, remaining, url, () => mainResponse.headers)
+          : challengeType === "ddos-guard"
+            ? await waitForDdosGuardResolution(page, remaining, url)
+            : await waitForChallengeResolution(page, remaining, url, () => mainResponse.headers)
 
     if (resolution !== "ok") {
       return {
@@ -104,6 +108,8 @@ export async function runTier3(
               ? "datacenter-ip-blocked (imperva sensor cookie obtained but challenge persisted — needs residential proxy)"
               : challengeType === "akamai"
                 ? "datacenter-ip-blocked (Akamai sensor cookie obtained but challenge persisted — needs residential proxy)"
+                : challengeType === "ddos-guard"
+                  ? "datacenter-ip-blocked (DDoS-Guard clearance cookie obtained but challenge persisted — needs residential proxy)"
                 : "datacenter-ip-blocked (cf_clearance obtained but redirect never completed — needs residential proxy)"
             : `${challengeType === "none" ? "cloudflare" : challengeType}-challenge-timeout`,
       }
@@ -160,6 +166,13 @@ export async function runTier3(
       const pageUrl = page.url()
       console.log(`[tier3] akamai-persistent: url="${pageUrl}" title="${pageTitle}" html=${html.length}b`)
       return { tier: 3, status: "blocked", durationMs: Date.now() - start, reason: "akamai-persistent" }
+    }
+
+    if (hasDdosGuardChallenge(html)) {
+      const pageTitle = await page.title().catch(() => "?")
+      const pageUrl = page.url()
+      console.log(`[tier3] ddos-guard-persistent: url="${pageUrl}" title="${pageTitle}" html=${html.length}b`)
+      return { tier: 3, status: "blocked", durationMs: Date.now() - start, reason: "ddos-guard-persistent" }
     }
 
     if (isBlocked(mainResponse.status, html)) {
