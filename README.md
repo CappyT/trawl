@@ -327,8 +327,8 @@ Tier 4: Residential proxy ──── success ──→ cache + return (15–45
 
 | Image tag                          | Built from                     | Runtime                       | Use case                                                   |
 | ---------------------------------- | ------------------------------ | ----------------------------- | ---------------------------------------------------------- |
-| `ghcr.io/germondai/trawl:latest`   | `apps/api/Dockerfile`          | Bun 1.3.14 (modern, AVX2)     | Default — modern Linux amd64/arm64                         |
-| `ghcr.io/germondai/trawl:baseline` | `apps/api/Dockerfile.baseline` | Bun 1.3.14 baseline (no AVX2) | Older CPUs / older kernels (Synology NAS, J4125, Atom-era) |
+| `ghcr.io/germondai/trawl:latest`   | `apps/api/Dockerfile`          | Bun 1.4.0 (modern, AVX2)     | Default — modern Linux amd64/arm64                         |
+| `ghcr.io/germondai/trawl:baseline` | `apps/api/Dockerfile.baseline` | Bun 1.4.0 baseline (no AVX2) | Older CPUs / older kernels (Synology NAS, J4125, Atom-era) |
 
 Both tags live on the same `ghcr.io/germondai/trawl` package — they share the registry but use different Dockerfile sources. Pick whichever tag fits your hardware:
 
@@ -340,7 +340,7 @@ image: ghcr.io/germondai/trawl:latest
 image: ghcr.io/germondai/trawl:baseline
 ```
 
-Synology note: many Synology NAS units (DSM 7.x on J4125 / older hardware) ship kernel 4.4.x, which Bun's modern runtime can't fully handle. Standard Bun requires kernel 5.1+ (5.6+ recommended); the baseline build degrades gracefully down to kernel 3.10. The `:baseline` tag is published for that case — **confirmed working** on a Synology DS920+ (Celeron J4125, DSM 7.3.2, kernel 4.4.302): the container starts cleanly, `/health` reports healthy, and it solves live Cloudflare challenges via `/v1` (see [#1](https://github.com/germondai/trawl/issues/1)). Published by independent GitHub Actions workflows: pushing `v1.4.0` creates `:1.4.0`, `:latest`, `:1.4.0-baseline`, and `:baseline`; pushing `main` creates `:nightly` and `:nightly-<sha>`.
+Synology note: many Synology NAS units (DSM 7.x on J4125 / older hardware) ship kernel 4.4.x, which Bun's modern runtime can't fully handle. Standard Bun requires kernel 5.1+ (5.6+ recommended); the baseline build degrades gracefully down to kernel 3.10. The `:baseline` tag is published for that case — **confirmed working** on a Synology DS920+ (Celeron J4125, DSM 7.3.2, kernel 4.4.302): the container starts cleanly, `/health` reports healthy, and it solves live Cloudflare challenges via `/v1` (see [#1](https://github.com/germondai/trawl/issues/1)). Published by independent GitHub Actions workflows: pushing `v1.4.1` creates `:1.4.1`, `:latest`, `:1.4.1-baseline`, and `:baseline`; pushing `main` creates `:nightly` and `:nightly-<sha>`.
 
 ## Releases & versioning
 

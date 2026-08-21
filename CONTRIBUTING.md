@@ -17,7 +17,7 @@ For security issues, **do not open a public issue** — see [SECURITY.md](SECURI
 
 ## Development setup
 
-Requirements: **Bun 1.3.14** and **Docker** (for the Redis service used in tests).
+Requirements: **Bun 1.4.0** and **Docker** (for the Redis service used in tests).
 
 ```bash
 git clone https://github.com/germondai/trawl.git
