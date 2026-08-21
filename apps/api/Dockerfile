@@ -1,5 +1,5 @@
 # ── Stage 1: install workspace deps (runs natively on build host) ──────────────
-FROM oven/bun:1.3.14 AS deps
+FROM oven/bun:1.4.0 AS deps
 WORKDIR /app
 
 # nodejs/python3/make/g++ are needed to compile better-sqlite3 (camoufox-js dep)
@@ -32,14 +32,15 @@ RUN bun install --frozen-lockfile --production --omit=dev --linker=hoisted \
  && find node_modules -path '*/better-sqlite3*' -name '*.c'   -delete \
  && find node_modules -path '*/better-sqlite3*' -name '*.h'   -delete \
  && find node_modules -path '*/better-sqlite3*' -name '*.map' -delete \
- && rm -rf node_modules/typescript node_modules/bun-types node_modules/@types \
+ && rm -rf node_modules/typescript node_modules/bun-types node_modules/@types node_modules/@typescript \
+ && test -z "$(find node_modules -path '*/@typescript/typescript-*' -print -quit)" \
  && rm -rf node_modules/impit-linux-arm64-musl \
          node_modules/impit-linux-x64-musl \
          node_modules/impit-darwin-* \
          node_modules/impit-win32-*
 
 # ── Stage 2: fetch the Camoufox Firefox binary (pinned version) ─────
-FROM oven/bun:1.3.14 AS camoufox
+FROM oven/bun:1.4.0 AS camoufox
 ENV CAMOUFOX_INSTALL_DIR=/opt/camoufox
 
 ARG UBO_VERSION=1.73.0
@@ -77,8 +78,8 @@ RUN --mount=type=secret,id=GITHUB_TOKEN,env=GITHUB_TOKEN \
 # Baking a verified copy into the image makes startup deterministic and removes the
 # runtime GitHub dependency + first-launch download latency. The size check fails the
 # build if the download is truncated, so a corrupt file can never be baked in.
-ARG GEOLITE_RELEASE=2026.08.07
-ARG GEOLITE_CITY_SHA256=5c32206cd9a67d3b8995e8ca010191a802e9cb06d3c089963f08b55deb1bd921
+ARG GEOLITE_RELEASE=2026.08.19
+ARG GEOLITE_CITY_SHA256=839a900122e9aedb51cc1506504e3824fd6685bbe87cba1699b3d19669094ab8
 RUN curl -fsSL \
       "https://github.com/P3TERX/GeoLite.mmdb/releases/download/${GEOLITE_RELEASE}/GeoLite2-City.mmdb" \
       -o /opt/camoufox/GeoLite2-City.mmdb && \
@@ -126,7 +127,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /usr/share/locale /usr/share/doc /usr/share/man
 
-COPY --from=oven/bun:1.3.14  /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=oven/bun:1.4.0  /usr/local/bin/bun /usr/local/bin/bun
 COPY --from=camoufox          /opt/camoufox      /opt/camoufox
 COPY --from=deps              /app/node_modules  /app/node_modules
 

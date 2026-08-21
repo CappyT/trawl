@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-08-21
+
+### Changed
+- Bump all application and internal package versions to `1.4.1`.
+- Update the container and development runtime to Bun 1.4.0, Biome to 2.5.10, Bun types to 1.4.0, Patchright to 1.62.1, Nuxt SEO to 5.3.14, and vue-tsc to 3.3.11.
+- Update GeoLite2 City to 2026.08.19 after the previously pinned upstream release became unavailable.
+- Keep Playwright Core on 1.60.0 for Camoufox compatibility and the Nuxt app on TypeScript 5.9.3 for vue-tsc compatibility; other workspaces use TypeScript 7.0.2.
+
+### Fixed
+- Remove the unused native TypeScript compiler from both production API images and fail image builds if a native `@typescript/typescript-*` artifact is present, eliminating its fixable HIGH runtime CVEs (#68).
+
 ## [1.4.0] - 2026-08-10
 
 ### Changed
