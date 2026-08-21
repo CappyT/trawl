@@ -2,12 +2,9 @@ import type { BrowserHandle } from "@trawl/browser"
 import { closeTemporaryContext, FINGERPRINT, newFreshContext } from "@trawl/browser"
 import type { Cookie, TierResult } from "@trawl/types"
 import { solvePageCaptchas } from "../solvers"
-import { waitForAkamaiResolution } from "../utils/akamaiWait"
-import { waitForChallengeResolution } from "../utils/challengeWait"
+import { routeChallengeWait } from "../utils/challengeRouter"
 import { toCookies } from "../utils/cookies"
-import { waitForDdosGuardResolution } from "../utils/ddosGuardWait"
 import {
-  detectChallengeType,
   hasAkamaiChallenge,
   hasDdosGuardChallenge,
   hasImpervaChallenge,
@@ -16,7 +13,6 @@ import {
   isCloudflarePage,
 } from "../utils/detect"
 import { normalizeHtml } from "../utils/html"
-import { waitForImpervaResolution } from "../utils/impervaWait"
 import { trackMainDocumentResponses } from "../utils/mainResponse"
 import { isHardNetworkFailure } from "../utils/network"
 import { captureResponse, isTextContentType } from "../utils/response"
@@ -84,15 +80,7 @@ export async function runTier4(
 
     const remaining = maxTimeout - (Date.now() - start)
     const peekHtml = await page.content().catch(() => "")
-    const challengeType = detectChallengeType(peekHtml)
-    const resolution =
-      challengeType === "imperva"
-        ? await waitForImpervaResolution(page, remaining, url)
-        : challengeType === "akamai"
-          ? await waitForAkamaiResolution(page, remaining, url)
-          : challengeType === "ddos-guard"
-            ? await waitForDdosGuardResolution(page, remaining, url)
-            : await waitForChallengeResolution(page, remaining, url, () => mainResponse.headers)
+    const { challengeType, resolution } = await routeChallengeWait(page, peekHtml, mainResponse.headers, remaining, url)
 
     if (resolution !== "ok") {
       return {
