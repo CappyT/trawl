@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Reap orphaned Camoufox processes in both API container variants by running Bun under Tini (#79).
+
 ## [1.4.2] - 2026-08-22
 
 ### Changed
