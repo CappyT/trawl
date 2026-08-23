@@ -124,6 +124,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       fonts-liberation \
       ca-certificates \
       curl \
+      tini \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /usr/share/locale /usr/share/doc /usr/share/man
 
@@ -160,4 +161,5 @@ ENV CAMOUFOX_INSTALL_DIR=/opt/camoufox \
 
 WORKDIR /app
 EXPOSE 8191
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["bun", "run", "apps/api/src/index.ts"]
