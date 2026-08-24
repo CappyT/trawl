@@ -15,6 +15,22 @@ export function hasCloudflareChallengeHeader(headers: Record<string, string> = {
   return cfMitigated?.toLowerCase() === "challenge"
 }
 
+function headerValue(headers: Record<string, string>, name: string): string | undefined {
+  return Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1]
+}
+
+export type AwsWafAction = "challenge" | "captcha"
+
+export function getAwsWafAction(
+  status: number | undefined,
+  headers: Record<string, string> = {},
+): AwsWafAction | undefined {
+  const action = headerValue(headers, "x-amzn-waf-action")?.trim().toLowerCase()
+  if (status === 202 && action === "challenge") return "challenge"
+  if (status === 405 && action === "captcha") return "captcha"
+  return undefined
+}
+
 export function isCloudflarePage(html: string, headers: Record<string, string>): boolean {
   if (hasCloudflareChallengeHeader(headers)) return true
   if (hasDdosGuardChallenge(html)) return false
@@ -124,11 +140,22 @@ export function hasDdosGuardChallenge(html: string, _headers: Record<string, str
 
 // AWS WAF JavaScript challenge — the interstitial page that loads challenge.js to
 // issue an aws-waf-token cookie before redirecting to the protected resource.
-export function hasAwsWafChallenge(html: string): boolean {
-  return /awsWafCookieDomainList|window\.gokuProps|token\.awswaf\.com\/[^"']*challenge\.js/i.test(html)
+export function hasAwsWafChallenge(html: string, headers: Record<string, string> = {}, status?: number): boolean {
+  if (getAwsWafAction(status, headers) === "challenge") return true
+  return /window\.gokuProps/i.test(html) && /token\.awswaf\.com\/[^"']*challenge\.js/i.test(html)
 }
 
-export function detectChallengeType(html: string, headers: Record<string, string> = {}): ChallengeType {
+export function hasAwsWafCaptcha(html: string, headers: Record<string, string> = {}, status?: number): boolean {
+  if (getAwsWafAction(status, headers) === "captcha") return true
+  return /window\.gokuProps/i.test(html) && /token\.awswaf\.com\/[^"']*captcha\.js/i.test(html)
+}
+
+export function detectChallengeType(
+  html: string,
+  headers: Record<string, string> = {},
+  status?: number,
+): ChallengeType {
+  if (hasAwsWafChallenge(html, headers, status) || hasAwsWafCaptcha(html, headers, status)) return "aws-waf"
   if (hasCloudflareChallengeHeader(headers)) return "cloudflare-interstitial"
   if (hasTurnstile(html)) return "cloudflare-turnstile"
   if (hasDdosGuardChallenge(html, headers)) return "ddos-guard"
@@ -138,13 +165,11 @@ export function detectChallengeType(html: string, headers: Record<string, string
   if (hasHcaptcha(html)) return "hcaptcha"
   if (hasRecaptcha(html)) return "recaptcha"
   if (hasCapChallenge(html)) return "cap"
-  if (hasAwsWafChallenge(html)) return "aws-waf"
   return "none"
 }
 
 export function isBlocked(status: number, html: string): boolean {
-  // 202 is used by some CDNs (e.g. IMDB) as a bot-gate before the real response
-  if (status === 202 || status === 403 || status === 429) return true
+  if (status === 403 || status === 429) return true
   if (isCloudflarePage(html, {})) return true
   if (hasImpervaChallenge(html)) return true
   if (hasAkamaiChallenge(html)) return true
@@ -176,9 +201,6 @@ const LEAN_BODY_THRESHOLDS: Partial<Record<ChallengeType, number>> = {
 // checks are TRAWL-specific heuristics (CF's auto-resolving bootstrap and Imperva's
 // sensor cookie challenge can come at 200 with body < a few KB).
 export function isChallengeWall(status: number, bodyLength: number, challengeType: ChallengeType): boolean {
-  // AWS WAF returns 202 with an empty body as the JS-challenge gate; isBlocked() already
-  // handles 202, but isChallengeWall() is used independently in the MITM proxy path.
-  if (status === 202 && bodyLength === 0) return true
   if (challengeType === "none") return false
   if (status === 403 || status === 503) return true
   if (challengeType === "akamai" || challengeType === "aws-waf") return true

@@ -8,9 +8,11 @@ export { runTier4, type Tier4Result } from "./tiers/4"
 export {
   type ChallengeType,
   detectChallengeType,
+  getAwsWafAction,
   hasAkamaiChallenge,
-  hasDdosGuardChallenge,
+  hasAwsWafCaptcha,
   hasAwsWafChallenge,
+  hasDdosGuardChallenge,
   hasHcaptcha,
   hasImpervaChallenge,
   hasRecaptcha,

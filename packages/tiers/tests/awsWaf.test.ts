@@ -1,57 +1,48 @@
 import { describe, expect, test } from "bun:test"
-import { detectChallengeType, hasAwsWafChallenge, isChallengeWall } from "../src/utils/detect"
+import {
+  detectChallengeType,
+  getAwsWafAction,
+  hasAwsWafCaptcha,
+  hasAwsWafChallenge,
+  isChallengeWall,
+} from "../src/utils/detect"
 
-// Minimal AWS WAF JS-challenge page — the real page loads challenge.js from
-// token.awswaf.com and sets an aws-waf-token cookie before redirecting.
-const awsWafInterstitial = `
-  <!DOCTYPE html>
-  <html>
-    <head><title>Request unsuccessful</title></head>
-    <body>
-      <script>
-        window.awsWafCookieDomainList = ['example.com'];
-        window.gokuProps = {"key":"AQIDAHjcYu0fake","iv":"abc123==","context":"def456=="};
-      </script>
-      <script src="https://abc123.token.awswaf.com/abc123/challenge.js" defer></script>
-    </body>
-  </html>
-`
+const challengeHtml = `<script>window.gokuProps={"key":"x"}</script><script src="https://x.token.awswaf.com/x/challenge.js"></script>`
+const captchaHtml = `<script>window.gokuProps={"key":"x"}</script><script src="https://x.token.awswaf.com/x/captcha.js"></script>`
 
 describe("AWS WAF challenge detection", () => {
-  test("detects the JS-challenge interstitial by awsWafCookieDomainList", () => {
-    expect(hasAwsWafChallenge(awsWafInterstitial)).toBe(true)
-    expect(detectChallengeType(awsWafInterstitial)).toBe("aws-waf")
+  test("recognizes case-insensitive authoritative Challenge and CAPTCHA headers with their statuses", () => {
+    expect(getAwsWafAction(202, { "X-AmZn-WaF-aCtIoN": "Challenge" })).toBe("challenge")
+    expect(getAwsWafAction(405, { "X-AMZN-WAF-ACTION": "CAPTCHA" })).toBe("captcha")
+    expect(detectChallengeType("", { "X-Amzn-Waf-Action": "challenge" }, 202)).toBe("aws-waf")
+    expect(detectChallengeType("", { "x-amzn-waf-action": "captcha" }, 405)).toBe("aws-waf")
   })
 
-  test("detects the interstitial by gokuProps alone", () => {
-    const html = `<html><body><script>window.gokuProps = {"key":"AQI"}</script></body></html>`
-    expect(hasAwsWafChallenge(html)).toBe(true)
+  test("requires the matching status for an action header", () => {
+    expect(getAwsWafAction(200, { "x-amzn-waf-action": "challenge" })).toBeUndefined()
+    expect(getAwsWafAction(202, { "x-amzn-waf-action": "captcha" })).toBeUndefined()
   })
 
-  test("detects the interstitial by challenge.js script src", () => {
-    const html = `<html><body><script src="https://x.token.awswaf.com/x/challenge.js"></script></body></html>`
-    expect(hasAwsWafChallenge(html)).toBe(true)
+  test("uses gokuProps plus the matching script for HTML fallback", () => {
+    expect(hasAwsWafChallenge(challengeHtml)).toBe(true)
+    expect(hasAwsWafCaptcha(captchaHtml)).toBe(true)
+    expect(detectChallengeType(challengeHtml)).toBe("aws-waf")
   })
 
-  test("does not flag a full page that merely loads AWS resources", () => {
-    const html = `<html><body>${"real content ".repeat(400)}<script src="https://sdk.amazonaws.com/js/aws-sdk-2.0.0.min.js"></script></body></html>`
-    expect(hasAwsWafChallenge(html)).toBe(false)
-    expect(detectChallengeType(html)).toBe("none")
+  test("does not classify individual integration markers", () => {
+    expect(hasAwsWafChallenge(`<script src="https://x.token.awswaf.com/x/challenge.js"></script>`)).toBe(false)
+    expect(hasAwsWafChallenge(`<script>window.awsWafCookieDomainList=['example.com']</script>`)).toBe(false)
+    expect(hasAwsWafChallenge(`<script>window.gokuProps={}</script>`)).toBe(false)
   })
 
-  test("treats an AWS WAF interstitial as a proxy challenge wall", () => {
-    expect(isChallengeWall(200, Buffer.byteLength(awsWafInterstitial), "aws-waf")).toBe(true)
-  })
-
-  test("treats a 202 response with empty body as a challenge wall regardless of type", () => {
-    // AWS WAF returns HTTP 202 with a 0-byte body as a bot-gate before the JS
-    // challenge page. isBlocked() already handles this for /scrape; isChallengeWall()
-    // now matches so the MITM proxy path escalates consistently.
-    expect(isChallengeWall(202, 0, "none")).toBe(true)
-  })
-
-  test("does not flag a non-empty 202 as a challenge wall", () => {
-    // A legitimate 202 Accepted with a response body must not be escalated.
+  test("leaves empty and non-empty ordinary 202 responses alone", () => {
+    expect(detectChallengeType("", {}, 202)).toBe("none")
+    expect(isChallengeWall(202, 0, "none")).toBe(false)
     expect(isChallengeWall(202, 512, "none")).toBe(false)
+  })
+
+  test("treats a positively identified AWS response as a wall", () => {
+    expect(isChallengeWall(202, 0, "aws-waf")).toBe(true)
+    expect(isChallengeWall(405, 0, "aws-waf")).toBe(true)
   })
 })

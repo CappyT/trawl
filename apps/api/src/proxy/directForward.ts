@@ -240,7 +240,11 @@ async function readHttpResponse(
   // an unbounded/keep-alive response body to finish (or hit the 30s socket timeout).
   // Body-based detection below remains the fallback for challenge variants that
   // do not send this header.
-  if (!skipChallengeDetection && detectChallengeType("", headers) === "cloudflare-interstitial") {
+  const headerChallengeType = detectChallengeType("", headers, status)
+  if (
+    !skipChallengeDetection &&
+    (headerChallengeType === "cloudflare-interstitial" || headerChallengeType === "aws-waf")
+  ) {
     socket.destroy()
     return {
       mode: "buffer",
@@ -283,7 +287,7 @@ async function readHttpResponse(
       return { mode: "error", error: err instanceof Error ? err : new Error(String(err)) }
     }
     const previewText = decodeForInspection(body, headers["content-encoding"])
-    const challengeType = detectChallengeType(previewText, headers)
+    const challengeType = detectChallengeType(previewText, headers, status)
     const challengeDetected = !skipChallengeDetection && isChallengeWall(status, body.length, challengeType)
     return {
       mode: "buffer",
