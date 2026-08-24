@@ -57,6 +57,8 @@ export async function runTier1(
     res.headers.forEach((v, k) => {
       responseHeaders[k] = v
     })
+    const setCookies = res.headers.getSetCookie()
+    if (setCookies.length > 0) responseHeaders["set-cookie"] = setCookies.join("\n")
     const contentType = responseHeaders["content-type"] ?? "application/octet-stream"
 
     // Decode a bounded preview losslessly for challenge detection — keeps the original

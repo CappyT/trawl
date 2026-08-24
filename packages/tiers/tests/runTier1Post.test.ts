@@ -141,4 +141,19 @@ describe("runTier1 — POST support", () => {
       restore()
     }
   })
+
+  test("preserves multiple Set-Cookie fields without splitting Expires commas", async () => {
+    const headers = new Headers({ "content-type": "text/html" })
+    headers.append("set-cookie", "session=one; Expires=Wed, 21 Oct 2030 07:28:00 GMT; Path=/")
+    headers.append("set-cookie", "clearance=two; Path=/; HttpOnly")
+    const restore = installFetchMock(() => new Response("<html>OK</html>", { headers }))
+    try {
+      const result = await runTier1("https://example.com/")
+      expect(result.responseHeaders?.["set-cookie"]).toBe(
+        "session=one; Expires=Wed, 21 Oct 2030 07:28:00 GMT; Path=/\nclearance=two; Path=/; HttpOnly",
+      )
+    } finally {
+      restore()
+    }
+  })
 })

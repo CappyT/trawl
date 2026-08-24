@@ -11,12 +11,13 @@ function response(
   status: number,
   headers: Record<string, string>,
   body: string,
-  options: { navigation?: boolean; frame?: object } = {},
+  options: { navigation?: boolean; frame?: object; allHeaders?: Record<string, string> } = {},
 ) {
   return {
     url: () => url,
     status: () => status,
     headers: () => headers,
+    allHeaders: async () => options.allHeaders ?? headers,
     body: async () => Buffer.from(body),
     request: () => ({
       isNavigationRequest: () => options.navigation ?? true,
@@ -58,5 +59,23 @@ describe("MainDocumentResponseTracker", () => {
 
     expect(tracker.status).toBe(301)
     expect(tracker.headers.location).toBe("magnet:?xt=urn:test")
+  })
+
+  test("captures cookie headers from allHeaders even when headers omits them", async () => {
+    const tracker = new MainDocumentResponseTracker(page as never)
+    tracker.observe(
+      response("https://example.com/", 200, { "content-type": "text/html" }, "ok", {
+        allHeaders: {
+          "content-type": "text/html",
+          "set-cookie": "session=one; Path=/; HttpOnly\nclearance=two; Path=/; Secure",
+        },
+      }) as never,
+    )
+
+    expect(tracker.headers["set-cookie"]).toBeUndefined()
+    const captured = await captureResponse(tracker.response)
+    expect(captured.responseHeaders?.["set-cookie"]).toBe(
+      "session=one; Path=/; HttpOnly\nclearance=two; Path=/; Secure",
+    )
   })
 })
