@@ -1,7 +1,10 @@
 import { FINGERPRINT } from "@trawl/browser"
 import type { TierResult } from "@trawl/types"
 import {
+  getAwsWafAction,
   hasAkamaiChallenge,
+  hasAwsWafCaptcha,
+  hasAwsWafChallenge,
   hasHcaptcha,
   hasRecaptcha,
   hasTurnstile,
@@ -49,10 +52,9 @@ export async function runTier1(
       redirect: "follow",
     })
 
-    // Preserve raw bytes — required for binary content (.torrent, images, etc.).
-    // The MITM proxy (:8192) consumes `body`; /scrape still consumes `html`.
-    const rawBytes = new Uint8Array(await res.arrayBuffer())
-
+    // AWS WAF's action header is authoritative when paired with its documented
+    // status. Inspect it before reading the body: challenge responses may keep the
+    // body open, and waiting for arrayBuffer() would delay browser escalation.
     const responseHeaders: Record<string, string> = {}
     res.headers.forEach((v, k) => {
       responseHeaders[k] = v
@@ -60,6 +62,23 @@ export async function runTier1(
     const setCookies = res.headers.getSetCookie()
     if (setCookies.length > 0) responseHeaders["set-cookie"] = setCookies.join("\n")
     const contentType = responseHeaders["content-type"] ?? "application/octet-stream"
+    const awsAction = getAwsWafAction(res.status, responseHeaders)
+    if (awsAction) {
+      return {
+        tier: 1,
+        status: awsAction === "captcha" ? "blocked" : "needs-js",
+        durationMs: Date.now() - start,
+        reason: awsAction === "captcha" ? "aws-waf-captcha-required" : "aws-waf-challenge",
+        responseHeaders,
+        contentType,
+        body: new Uint8Array(),
+        statusCode: res.status,
+      }
+    }
+
+    // Preserve raw bytes — required for binary content (.torrent, images, etc.).
+    // The MITM proxy (:8192) consumes `body`; /scrape still consumes `html`.
+    const rawBytes = new Uint8Array(await res.arrayBuffer())
 
     // Decode a bounded preview losslessly for challenge detection — keeps the original
     // byte buffer untouched. `fatal: false` replaces invalid sequences with U+FFFD
@@ -127,6 +146,30 @@ export async function runTier1(
         status: "needs-js",
         durationMs: Date.now() - start,
         reason: "akamai-interstitial",
+        responseHeaders,
+        contentType,
+        body: rawBytes,
+        statusCode: res.status,
+      }
+    }
+    if (hasAwsWafCaptcha(previewText, responseHeaders, res.status)) {
+      return {
+        tier: 1,
+        status: "blocked",
+        durationMs: Date.now() - start,
+        reason: "aws-waf-captcha-required",
+        responseHeaders,
+        contentType,
+        body: rawBytes,
+        statusCode: res.status,
+      }
+    }
+    if (hasAwsWafChallenge(previewText, responseHeaders, res.status)) {
+      return {
+        tier: 1,
+        status: "needs-js",
+        durationMs: Date.now() - start,
+        reason: "aws-waf-challenge",
         responseHeaders,
         contentType,
         body: rawBytes,

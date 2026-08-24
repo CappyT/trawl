@@ -58,6 +58,10 @@ export async function runTier4(
     state.proxyContext = proxyContext
 
     const page = await proxyContext.newPage()
+    const initialAwsWafTokens = new Set<string>()
+    for (const cookie of await proxyContext.cookies()) {
+      if (cookie.name === "aws-waf-token") initialAwsWafTokens.add(`${cookie.domain}:${cookie.value}`)
+    }
 
     if ((extraHeaders && Object.keys(extraHeaders).length > 0) || method === "POST") {
       await page.route(url, (route: RouteLike) => {
@@ -80,17 +84,28 @@ export async function runTier4(
 
     const remaining = maxTimeout - (Date.now() - start)
     const peekHtml = await page.content().catch(() => "")
-    const { challengeType, resolution } = await routeChallengeWait(page, peekHtml, mainResponse.headers, remaining, url)
+    const { challengeType, resolution } = await routeChallengeWait(
+      page,
+      peekHtml,
+      mainResponse.headers,
+      remaining,
+      url,
+      undefined,
+      mainResponse.status,
+      initialAwsWafTokens,
+    )
 
     if (resolution !== "ok") {
       return {
         tier: 4,
-        status: resolution === "ip-blocked" ? "blocked" : "timeout",
+        status: resolution === "ip-blocked" || resolution === "captcha-required" ? "blocked" : "timeout",
         durationMs: Date.now() - start,
         reason:
-          resolution === "ip-blocked"
-            ? "proxy-ip-blocked"
-            : `${challengeType === "none" ? "cloudflare" : challengeType}-challenge-timeout`,
+          resolution === "captcha-required"
+            ? "aws-waf-captcha-required"
+            : resolution === "ip-blocked"
+              ? "proxy-ip-blocked"
+              : `${challengeType === "none" ? "cloudflare" : challengeType}-challenge-timeout`,
       }
     }
 
