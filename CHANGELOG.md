@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Reap orphaned Camoufox processes in both API container variants by running Bun under Tini (#79).
+- **Proxy: malformed `Set-Cookie` headers for Go and other strict HTTP/1.1 clients.** Playwright's `response.allHeaders()` joins multiple `Set-Cookie` values with `\n` into a single map entry. `writeResponseFromBuffer` was emitting that string as one header line with embedded newlines, which Go's `net/http` parser (and other strict clients) rejected as a malformed MIME header line — in particular when an `Expires` date containing a comma appeared after the fold. The fix splits on `\n` and emits each cookie as its own `Set-Cookie:` header line, as required by RFC 6265.
 
 ## [1.4.2] - 2026-08-22
 
