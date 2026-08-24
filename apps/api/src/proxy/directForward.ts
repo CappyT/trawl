@@ -224,10 +224,11 @@ async function readHttpResponse(
     const name = line.slice(0, idx).trim().toLowerCase()
     const value = line.slice(idx + 1).trim()
     if (!name) continue
-    // Keep first occurrence for multi-value headers; Set-Cookie is the
-    // common case where only the first makes it through. Caller can read
-    // raw lines via the set-cookie header if needed.
-    if (headers[name] === undefined) headers[name] = value
+    if (name === "set-cookie" && headers[name] !== undefined) {
+      headers[name] += `\n${value}`
+    } else if (headers[name] === undefined) {
+      headers[name] = value
+    }
   }
 
   const contentType = headers["content-type"] ?? "application/octet-stream"
