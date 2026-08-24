@@ -31,6 +31,23 @@ Much faster and more reliable FlareSolverr & Byparr alternative and drop-in repl
   <table>
     <tr>
       <td width="30%" align="center" valign="middle">
+        <a href="https://get.brightdata.com/trawl" target="_blank">
+          <img width="1200" height="1200" alt="Bright Data" src="https://github.com/user-attachments/assets/230da630-caf0-40e9-9cb5-8ffad3bd1eb1" />
+        </a>
+      </td>
+      <td valign="middle">
+        <b><a href="https://get.brightdata.com/trawl" target="_blank">Bright Data</a></b> - The most powerful platform for Web Unlocker, SERP API and web scraping tools.<br><br>
+        <b>Why <a href="https://get.brightdata.com/trawl" target="_blank">Bright Data</a>?</b><br>
+        • <a href="https://get.brightdata.com/trawl-web-unlocker" target="_blank">Web Unlocker</a> - bypass any anti-bot protection<br>
+        • <a href="https://get.brightdata.com/trawl-serp-api" target="_blank">SERP API</a> - real-time Google, Bing & more results<br>
+        • Scraping Browser & dedicated scrapers<br>
+        • Massive residential proxy network<br>
+        • Built for scale and reliability<br><br>
+        <b>Get started for free with <a href="https://get.brightdata.com/trawl" target="_blank">Bright Data</a>!</b>
+      </td>
+    </tr>
+    <tr>
+      <td width="30%" align="center" valign="middle">
         <a href="https://go.nodemaven.com/germondaireadme" target="_blank">
           <img width="760" height="280" alt="nodemaven" src="https://github.com/user-attachments/assets/5fe3b231-b712-42d1-bc70-23c934f1a0ef" />
         </a>
