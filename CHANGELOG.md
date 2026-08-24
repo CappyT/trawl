@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **AWS WAF challenge detection in `detect.ts`.** `hasAwsWafChallenge()` recognises the AWS WAF JavaScript challenge page by its `awsWafCookieDomainList`, `gokuProps`, and `token.awswaf.com/challenge.js` markers. A new `"aws-waf"` variant is added to `ChallengeType` and `detectChallengeType()`, and `isChallengeWall()` now treats a 202 response with an empty body as a challenge wall — aligning it with the existing `isBlocked()` behaviour (which already notes "202 is used by some CDNs (e.g. IMDb) as a bot-gate"). Together these let the MITM proxy escalate to the browser tier for AWS WAF–protected sites.
+- **AWS WAF Challenge support.** Detect the documented `202` Challenge and `405` CAPTCHA responses from their `x-amzn-waf-action` header, with a conservative two-marker HTML fallback. Silent challenges use a dedicated browser waiter for the domain-matching `aws-waf-token`; interactive CAPTCHA is surfaced as `aws-waf-captcha-required` for a future solver.
 
 ### Fixed
 - Reap orphaned Camoufox processes in both API container variants by running Bun under Tini (#79).

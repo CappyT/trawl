@@ -21,6 +21,7 @@ describe("browser challenge routing", () => {
         ddosGuard: waiter("ddos-guard"),
         imperva: waiter("imperva"),
         akamai: waiter("akamai"),
+        awsWaf: waiter("aws-waf"),
       },
     )
 
@@ -39,9 +40,52 @@ describe("browser challenge routing", () => {
       ddosGuard: waiter("ddos-guard"),
       imperva: waiter("imperva"),
       akamai: waiter("akamai"),
+      awsWaf: waiter("aws-waf"),
     })
 
     expect(result.challengeType).toBe("ddos-guard")
     expect(calls).toEqual(["ddos-guard"])
+  })
+
+  test("routes AWS WAF to its dedicated waiter", async () => {
+    const calls: string[] = []
+    const waiter = (name: string) => async () => {
+      calls.push(name)
+      return "ok" as const
+    }
+    const result = await routeChallengeWait(
+      {} as Page,
+      "",
+      { "X-Amzn-Waf-Action": "Challenge" },
+      100,
+      "https://example.test/",
+      {
+        cloudflare: waiter("cloudflare"),
+        ddosGuard: waiter("ddos-guard"),
+        imperva: waiter("imperva"),
+        akamai: waiter("akamai"),
+        awsWaf: waiter("aws-waf"),
+      },
+      202,
+    )
+
+    expect(result).toEqual({ challengeType: "aws-waf", resolution: "ok" })
+    expect(calls).toEqual(["aws-waf"])
+  })
+
+  test("returns CAPTCHA-required without invoking a waiter", async () => {
+    const fail = async () => {
+      throw new Error("waiter must not run")
+    }
+    const result = await routeChallengeWait(
+      {} as Page,
+      "",
+      { "x-amzn-waf-action": "captcha" },
+      100,
+      undefined,
+      { cloudflare: fail, ddosGuard: fail, imperva: fail, akamai: fail, awsWaf: fail },
+      405,
+    )
+    expect(result).toEqual({ challengeType: "aws-waf", resolution: "captcha-required" })
   })
 })
