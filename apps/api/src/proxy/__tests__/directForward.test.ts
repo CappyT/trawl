@@ -16,6 +16,18 @@ const chunked = (...chunks: Uint8Array[]): ReadableStream<Uint8Array> =>
 
 const fetchFixture = (req: Request): Response => {
   const { pathname } = new URL(req.url)
+  if (pathname === "/cookies") {
+    const headers = new Headers({ "Content-Type": "text/html" })
+    headers.append("Set-Cookie", "session=one; Expires=Wed, 21 Oct 2030 07:28:00 GMT; Path=/")
+    headers.append("Set-Cookie", "clearance=two; Path=/; HttpOnly")
+    return new Response("cookies", { headers })
+  }
+  if (pathname === "/cookie-video") {
+    const headers = new Headers({ "Content-Type": "video/mp4" })
+    headers.append("Set-Cookie", "session=one; Path=/")
+    headers.append("Set-Cookie", "clearance=two; Path=/; Secure")
+    return new Response(Buffer.from([0, 1, 2, 3]), { headers })
+  }
   if (pathname === "/chunked-html")
     return new Response(
       chunked(Buffer.from("<!doctype html><title>Normal page</title>"), Buffer.from("<p>small response</p>")),
@@ -139,6 +151,23 @@ describe("directForwardHttp — Range / 206 Partial Content", () => {
 })
 
 describe("directForwardHttp — buffered by default", () => {
+  test("preserves repeated Set-Cookie fields using the internal newline convention", async () => {
+    const result = await directForwardHttp({ url: `${baseUrl}/cookies`, method: "GET", headers: {} })
+    expect(result.mode).toBe("buffer")
+    if (result.mode !== "buffer") return
+    expect(result.headers["set-cookie"]).toBe(
+      "session=one; Expires=Wed, 21 Oct 2030 07:28:00 GMT; Path=/\nclearance=two; Path=/; HttpOnly",
+    )
+  })
+
+  test("preserves repeated Set-Cookie fields on streamed responses", async () => {
+    const result = await directForwardHttp({ url: `${baseUrl}/cookie-video`, method: "GET", headers: {} })
+    expect(result.mode).toBe("stream")
+    if (result.mode !== "stream") return
+    expect(result.headers["set-cookie"]).toBe("session=one; Path=/\nclearance=two; Path=/; Secure")
+    result.socket.destroy()
+  })
+
   test("skips 103 Early Hints and escalates cf-mitigated without waiting for an open body", async () => {
     const sockets = new Set<net.Socket>()
     const hangingServer = net.createServer((socket) => {
