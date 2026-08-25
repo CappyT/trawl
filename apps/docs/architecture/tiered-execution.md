@@ -85,17 +85,14 @@ Tier 3 and Tier 4 detect the three DataDome responses. All of them arrive throug
 | Slider CAPTCHA | `c.js` script, `dd.rt = 'c'` | Reports `datadome-captcha-required`. No solver yet |
 | Hard block | `t=bv` on the challenge URL | Reports the IP as blocked and escalates to Tier 4 |
 
-The `x-dd-b` response header marks every DataDome response. The MITM proxy escalates on
-that header alone, before the body arrives.
+The block-only `x-dd-b` response header lets the MITM proxy escalate before the body arrives.
 
-DataDome reads headless signals directly. A headless browser fails the Device Check
-whatever its fingerprint says, while Cloudflare, Akamai, Imperva and DDoS-Guard all resolve
-headless. TRAWL therefore keeps the main pool headless and sends only DataDome escalations
-to a small headful sub-pool that runs behind an Xvfb virtual display.
+Some DataDome Device Check deployments require a browser running behind a display. TRAWL
+sends detected DataDome work to an opt-in headful pool running behind Xvfb.
 
-Tier 1 names the wall it meets, and the orchestrator picks the pool from that name before it
-checks a browser out. The sub-pool is warmed on the first DataDome escalation, so a
-deployment that never meets DataDome never launches it.
+Tier 1 can select the pool before browser acquisition. If a later tier detects DataDome,
+the orchestrator replaces the headless lease and retries that tier once. The optional pool
+is warmed during startup.
 
 The sub-pool is off by default: set `BROWSER_HEADFUL_POOL_SIZE=1` to scrape DataDome
 targets. See [Configuration](/getting-started/configuration).
