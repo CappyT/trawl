@@ -38,10 +38,8 @@ jobs:
       packages: write
 
     steps:
-      # GHCR refuses a reference with uppercase characters, and github.repository_owner
-      # keeps the account's original casing. Expressions have no lowercase function, so
-      # the image name is resolved here instead of in the workflow-level env.
-      - name: Resolve lowercase image name
+      - name: Normalize GHCR image name
+        shell: bash
         run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/trawl" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v7
@@ -99,10 +97,8 @@ jobs:
       packages: write
 
     steps:
-      # GHCR refuses a reference with uppercase characters, and github.repository_owner
-      # keeps the account's original casing. Expressions have no lowercase function, so
-      # the image name is resolved here instead of in the workflow-level env.
-      - name: Resolve lowercase image name
+      - name: Normalize GHCR image name
+        shell: bash
         run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/trawl" >> "$GITHUB_ENV"
 
       - uses: actions/download-artifact@v8
