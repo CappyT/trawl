@@ -176,7 +176,13 @@ export async function runTier4(
       const pageTitle = await page.title().catch(() => "?")
       const pageUrl = page.url()
       console.log(`[tier4] datadome-persistent: url="${pageUrl}" title="${pageTitle}" html=${html.length}b`)
-      return { tier: 4, status: "blocked", durationMs: Date.now() - start, reason: "datadome-persistent" }
+      return {
+        tier: 4,
+        status: "blocked",
+        durationMs: Date.now() - start,
+        reason: "datadome-persistent",
+        challenge: "datadome",
+      }
     }
 
     if (isBlocked(mainResponse.status, html)) {

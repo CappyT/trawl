@@ -12,8 +12,7 @@ export function statsRoute() {
       stalled: 0,
       live: 0,
     }
-    // `browsers` is the configured size, so the sub-pool reads `live: 0` with a non-zero
-    // `browsers` until the first DataDome escalation warms it. `null` means it is disabled.
+    // `null` means the optional pool is disabled.
     const headful = getHeadfulPool()?.getStats()
     return {
       browsers: stats.total,

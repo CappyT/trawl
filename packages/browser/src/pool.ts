@@ -89,7 +89,6 @@ export class BrowserPool {
   private recycleAfterTemporaryContexts: number
   private contentProcesses!: number
   private virtualDisplay: boolean
-  private idOffset: number
   private label: string
   private stallAfterMs: number
   private closeTimeoutMs: number
@@ -109,7 +108,6 @@ export class BrowserPool {
     recycleAfterTemporaryContexts = 8,
     contentProcesses = 2,
     virtualDisplay = false,
-    idOffset = 0,
     label = "pool",
     stallAfterMs = 180_000,
     closeTimeoutMs = CLOSE_TIMEOUT_MS,
@@ -124,9 +122,6 @@ export class BrowserPool {
     recycleAfterTemporaryContexts?: number
     contentProcesses?: number
     virtualDisplay?: boolean
-    // Keeps the browser ids of two pools in disjoint ranges, so a caller holding a handle
-    // can route its release back to the pool that issued it.
-    idOffset?: number
     label?: string
     stallAfterMs?: number
     closeTimeoutMs?: number
@@ -141,7 +136,6 @@ export class BrowserPool {
     this.recycleAfterTemporaryContexts = recycleAfterTemporaryContexts
     this.contentProcesses = contentProcesses
     this.virtualDisplay = virtualDisplay
-    this.idOffset = idOffset
     this.label = label
     this.stallAfterMs = stallAfterMs
     this.closeTimeoutMs = closeTimeoutMs
@@ -174,7 +168,7 @@ export class BrowserPool {
       // never fails either. Throwing lets the startup probe restart the container.
       const { browser, context } = await this.launchWithin(fingerprint, this.launchTimeoutMs)
       this.entries.push({
-        id: this.idOffset + i,
+        id: i,
         busy: false,
         lease: 0,
         restartCount: 0,
@@ -236,10 +230,8 @@ export class BrowserPool {
     //   `main_world_eval` — required for Turnstile's shadow-DOM checkbox.
     //   `forceScopeAccess` — C++-level cross-origin frame scope, COOP-friendly.
     const browser = await Camoufox({
-      // DataDome's Device Check scores headless signals directly, so a headless run fails it
-      // however clean the fingerprint is. `"virtual"` gives Camoufox a real Xvfb display and
-      // launches the browser headful behind it; camoufox-js kills the display on
-      // browser.close(). Needs the Xvfb binary, hence the opt-in.
+      // `"virtual"` launches headful Camoufox behind Xvfb; camoufox-js tears the display
+      // down with the browser. This mode is used by the optional DataDome pool.
       headless: this.virtualDisplay ? "virtual" : true,
       os: [camoufoxOs],
       // Screen + window randomization — Camoufox picks from the constraints per launch.
@@ -361,6 +353,7 @@ export class BrowserPool {
         entry.lastUsedAt = Date.now()
         resolve({
           id: entry.id,
+          headful: this.virtualDisplay,
           lease: entry.lease,
           context: entry.context,
           browser: entry.browser,

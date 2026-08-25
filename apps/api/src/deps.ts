@@ -16,47 +16,16 @@ import {
   STALL_TIMEOUT_MS,
 } from "./config"
 
-// Keeps the two pools' browser ids disjoint, so releaseBrowser() can route a handle back
-// to the pool that issued it.
-const HEADFUL_ID_OFFSET = 1000
-
 const state: {
   pool?: BrowserPool
   headfulPool?: BrowserPool
-  headfulReady?: Promise<void>
   sessionCache?: SessionCache
 } = {}
 
+const handleOwners = new WeakMap<object, BrowserPool>()
+
 export const getPool = () => state.pool
 export const getHeadfulPool = () => state.headfulPool
-
-// Warmed on the first DataDome escalation rather than at startup: a deployment that never
-// meets DataDome should not pay for an idle browser and its X display, and readiness must
-// not wait on a pool most requests never touch. The first such request pays the cold start.
-const warmHeadfulPool = async (): Promise<BrowserPool | undefined> => {
-  const pool = state.headfulPool
-  if (!pool) return undefined
-  if (!state.headfulReady) {
-    state.headfulReady = pool.init().then(() => {
-      pool.startHealthCheck()
-      console.log(`[api] headful pool warm (${HEADFUL_POOL_SIZE} browser${HEADFUL_POOL_SIZE === 1 ? "" : "s"})`)
-    })
-    // Let a later request retry the launch instead of caching the failure forever.
-    state.headfulReady.catch(() => {
-      state.headfulReady = undefined
-    })
-  }
-  try {
-    await state.headfulReady
-    return pool
-  } catch (err) {
-    console.warn(
-      "[api] headful pool unavailable, falling back to the headless pool:",
-      err instanceof Error ? err.message : err,
-    )
-    return undefined
-  }
-}
 
 const initSessionCache = async (): Promise<void> => {
   try {
@@ -91,7 +60,6 @@ export const initPool = async (): Promise<void> => {
       recycleAfterTemporaryContexts: RECYCLE_AFTER_TEMPORARY_CONTEXTS,
       contentProcesses: CONTENT_PROCESSES,
       virtualDisplay: true,
-      idOffset: HEADFUL_ID_OFFSET,
       label: "pool:headful",
       stallAfterMs: STALL_TIMEOUT_MS,
       closeTimeoutMs: CLOSE_TIMEOUT_MS,
@@ -102,8 +70,18 @@ export const initPool = async (): Promise<void> => {
   // browser-backed requests can wait in acquire() while capacity warms.
   state.pool = pool
 
-  await Promise.all([initSessionCache(), pool.init()])
-  pool.startHealthCheck()
+  try {
+    await Promise.all([initSessionCache(), pool.init()])
+    pool.startHealthCheck()
+    if (state.headfulPool) {
+      await state.headfulPool.init()
+      state.headfulPool.startHealthCheck()
+      console.log(`[api] headful pool warm (${HEADFUL_POOL_SIZE} browser${HEADFUL_POOL_SIZE === 1 ? "" : "s"})`)
+    }
+  } catch (error) {
+    await Promise.all([pool.shutdown(), state.headfulPool?.shutdown()])
+    throw error
+  }
 
   console.log(`[api] ready — all ${POOL_SIZE} browser${POOL_SIZE === 1 ? "" : "s"} warm`)
 }
@@ -114,14 +92,19 @@ export const getDeps = (): OrchestratorDeps => {
   return {
     acquireBrowser: async (d: string, budgetMs?: number, options?: AcquireOptions) => {
       if (options?.headful) {
-        const headful = await warmHeadfulPool()
-        if (headful) return headful.acquire(d, budgetMs)
+        const headful = state.headfulPool
+        if (!headful) throw new Error("DataDome requires BROWSER_HEADFUL_POOL_SIZE greater than 0")
+        const handle = await headful.acquire(d, budgetMs)
+        handleOwners.set(handle, headful)
+        return handle
       }
-      return p.acquire(d, budgetMs)
+      const handle = await p.acquire(d, budgetMs)
+      handleOwners.set(handle, p)
+      return handle
     },
-    releaseBrowser: (id: number, lease?: number) => {
-      if (id >= HEADFUL_ID_OFFSET) state.headfulPool?.release(id, lease)
-      else p.release(id, lease)
+    releaseBrowser: (handle) => {
+      handleOwners.get(handle)?.release(handle.id, handle.lease)
+      handleOwners.delete(handle)
     },
     loadSession: (d: string) =>
       state.sessionCache ? state.sessionCache.load(d).catch(() => undefined) : Promise.resolve(undefined),

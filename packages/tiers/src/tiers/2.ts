@@ -96,7 +96,13 @@ export async function runTier2(
     // Same reasoning for DataDome: isBlocked() already catches the 403, but a stale
     // `datadome` cookie is worth telling apart from any other 403 in the logs.
     if (hasDataDomeChallenge(html)) {
-      return { tier: 2, status: "blocked", durationMs: Date.now() - start, reason: "datadome-session-expired" }
+      return {
+        tier: 2,
+        status: "blocked",
+        durationMs: Date.now() - start,
+        reason: "datadome-session-expired",
+        challenge: "datadome",
+      }
     }
 
     if (isBlocked(mainResponse.status, html)) {

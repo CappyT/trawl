@@ -15,10 +15,7 @@ export const RECYCLE_AFTER_TEMPORARY_CONTEXTS = Number(process.env.BROWSER_RECYC
 // minimal while still allowing CF/Imperva challenges to resolve. Raise if specific
 // targets fail with empty content (rare).
 export const CONTENT_PROCESSES = Number(process.env.BROWSER_CONTENT_PROCESSES ?? "2")
-// Size of the headful sub-pool, launched behind an Xvfb virtual display and used only for
-// DataDome escalations. DataDome reads headless signals directly and fails the Device Check
-// whatever the fingerprint says, while every other supported wall resolves headless, so the
-// main pool stays headless and faster.
+// Size of the headful sub-pool, launched behind Xvfb for DataDome Device Check escalations.
 //
 // Off by default because this pool sits ON TOP of BROWSER_POOL_SIZE: one headful browser
 // plus its X display measures ~380 MB, which would silently move the memory ceiling of a
