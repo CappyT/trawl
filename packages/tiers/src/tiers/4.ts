@@ -16,6 +16,7 @@ import {
 import { normalizeHtml } from "../utils/html"
 import { trackMainDocumentResponses } from "../utils/mainResponse"
 import { isHardNetworkFailure } from "../utils/network"
+import { isProxyTransportFailure, normalizeProxyError, proxyResponseFailure } from "../utils/proxyFailure"
 import { captureResponse, isTextContentType } from "../utils/response"
 import type { RouteLike } from "../utils/sanitize"
 import { routeContinueOverrides } from "../utils/sanitize"
@@ -77,7 +78,11 @@ export async function runTier4(
       .catch((e: Error) => e)
 
     if (isHardNetworkFailure(gotoErr)) {
-      return { tier: 4, status: "error", durationMs: Date.now() - start, reason: gotoErr.message.split("\n")[0] }
+      return { tier: 4, status: "error", durationMs: Date.now() - start, reason: normalizeProxyError(gotoErr) }
+    }
+    const earlyProxyFailure = proxyResponseFailure(mainResponse.status, mainResponse.headers)
+    if (earlyProxyFailure) {
+      return { tier: 4, status: "error", durationMs: Date.now() - start, reason: earlyProxyFailure }
     }
 
     const remaining = maxTimeout - (Date.now() - start)
@@ -129,7 +134,7 @@ export async function runTier4(
         tier: 4,
         status: "error",
         durationMs: Date.now() - start,
-        reason: "browser network error (about:neterror)",
+        reason: "proxy-connection-failed",
       }
     }
 
@@ -199,7 +204,11 @@ export async function runTier4(
       tier: 4,
       status: "error",
       durationMs: Date.now() - start,
-      reason: err instanceof Error ? err.message : String(err),
+      reason: isProxyTransportFailure(err)
+        ? normalizeProxyError(err)
+        : err instanceof Error
+          ? err.message
+          : String(err),
     }
   } finally {
     await closeTemporaryContext(state.proxyContext, handle.requestBrowserReplacement, "tier4 context cleanup timed out")

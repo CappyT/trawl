@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Reap orphaned Camoufox processes in both API container variants by running Bun under Tini (#79).
 - Preserve every upstream `Set-Cookie` field across direct, Tier 1, and browser-backed proxy responses, serializing each cookie as its own HTTP header instead of dropping or malformedly folding repeated values (#64).
+- Treat an explicit request-level `proxy` as a strict routing guarantee: route HTTP(S) Tier 1 requests through it, skip direct Tier 1 for SOCKS, bypass the unproxied Tier 2 cache, prevent proxy-derived sessions from entering the shared domain cache, disable Firefox direct failover, and surface authentication, transport, protocol, and `Proxy-Status` failures as errors instead of successful content (#73).
 
 ## [1.4.2] - 2026-08-22
 

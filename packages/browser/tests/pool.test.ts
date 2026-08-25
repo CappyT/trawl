@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { BrowserPool } from "../src/pool"
+import { BrowserPool, PROXY_SAFETY_FIREFOX_PREFS } from "../src/pool"
 
 const pools: BrowserPool[] = []
 
@@ -78,6 +78,10 @@ describe("BrowserPool identity", () => {
 })
 
 describe("BrowserPool recycling", () => {
+  test("disables Firefox direct fallback for proxied navigations", () => {
+    expect(PROXY_SAFETY_FIREFOX_PREFS["network.proxy.failover_direct"]).toBeFalse()
+  })
+
   test("publishes the first browser before warming remaining capacity concurrently", async () => {
     const { factory: baseFactory } = makeFactory()
     let activeLaunches = 0

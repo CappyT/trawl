@@ -14,6 +14,7 @@ import {
   isCloudflarePage,
 } from "../utils/detect"
 import { normalizeHtml } from "../utils/html"
+import { normalizeProxyError, proxyResponseFailure } from "../utils/proxyFailure"
 import { isTextContentType } from "../utils/response"
 
 export interface Tier1Result extends TierResult {
@@ -38,6 +39,7 @@ export async function runTier1(
   extraHeaders?: Record<string, string>,
   method?: string,
   body?: string,
+  proxy?: string,
 ): Promise<Tier1Result> {
   const start = Date.now()
   try {
@@ -55,6 +57,7 @@ export async function runTier1(
         ...extraHeaders,
       },
       redirect: "follow",
+      ...(proxy ? { proxy } : {}),
     })
 
     // AWS WAF's action header is authoritative when paired with its documented
@@ -67,6 +70,19 @@ export async function runTier1(
     const setCookies = res.headers.getSetCookie()
     if (setCookies.length > 0) responseHeaders["set-cookie"] = setCookies.join("\n")
     const contentType = responseHeaders["content-type"] ?? "application/octet-stream"
+    const proxyFailure = proxy ? proxyResponseFailure(res.status, responseHeaders) : undefined
+    if (proxyFailure) {
+      return {
+        tier: 1,
+        status: "error",
+        durationMs: Date.now() - start,
+        reason: proxyFailure,
+        responseHeaders,
+        contentType,
+        body: new Uint8Array(),
+        statusCode: res.status,
+      }
+    }
     const awsAction = getAwsWafAction(res.status, responseHeaders)
     if (awsAction) {
       return {
@@ -251,7 +267,7 @@ export async function runTier1(
       tier: 1,
       status: "error",
       durationMs: Date.now() - start,
-      reason: err instanceof Error ? err.message : String(err),
+      reason: proxy ? normalizeProxyError(err) : err instanceof Error ? err.message : String(err),
     }
   }
 }

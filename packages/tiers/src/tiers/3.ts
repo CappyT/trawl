@@ -17,6 +17,7 @@ import {
 import { normalizeHtml } from "../utils/html"
 import { trackMainDocumentResponses } from "../utils/mainResponse"
 import { isHardNetworkFailure } from "../utils/network"
+import { isProxyTransportFailure, normalizeProxyError, proxyResponseFailure } from "../utils/proxyFailure"
 import { captureResponse, isTextContentType } from "../utils/response"
 import type { RouteLike } from "../utils/sanitize"
 import { routeContinueOverrides } from "../utils/sanitize"
@@ -95,7 +96,17 @@ export async function runTier3(
 
     // Abort early on hard network failures — no point running challenge wait
     if (isHardNetworkFailure(gotoErr)) {
-      return { tier: 3, status: "error", durationMs: Date.now() - start, reason: gotoErr.message.split("\n")[0] }
+      return {
+        tier: 3,
+        status: "error",
+        durationMs: Date.now() - start,
+        reason:
+          proxyUrl && isProxyTransportFailure(gotoErr) ? normalizeProxyError(gotoErr) : gotoErr.message.split("\n")[0],
+      }
+    }
+    const earlyProxyFailure = proxyUrl ? proxyResponseFailure(mainResponse.status, mainResponse.headers) : undefined
+    if (earlyProxyFailure) {
+      return { tier: 3, status: "error", durationMs: Date.now() - start, reason: earlyProxyFailure }
     }
     // Otherwise (navigation interrupted by CF redirect) — fall through and keep going
 
@@ -153,8 +164,11 @@ export async function runTier3(
     // instead of hitting the isHardFail regex (which only matches Chromium ERR_* strings),
     // so we still need to catch the resulting about:neterror page here.
     if (isBrowserErrorPage(html)) {
-      const errMsg =
-        gotoErr instanceof Error ? gotoErr.message.split("\n")[0] : "browser network error (about:neterror)"
+      const errMsg = proxyUrl
+        ? "proxy-connection-failed"
+        : gotoErr instanceof Error
+          ? gotoErr.message.split("\n")[0]
+          : "browser network error (about:neterror)"
       return { tier: 3, status: "error", durationMs: Date.now() - start, reason: errMsg }
     }
 
@@ -218,7 +232,12 @@ export async function runTier3(
       tier: 3,
       status: "error",
       durationMs: Date.now() - start,
-      reason: err instanceof Error ? err.message : String(err),
+      reason:
+        proxyUrl && isProxyTransportFailure(err)
+          ? normalizeProxyError(err)
+          : err instanceof Error
+            ? err.message
+            : String(err),
     }
   } finally {
     // Closing the context closes all of its pages. If Firefox wedges during cleanup,

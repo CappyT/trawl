@@ -43,6 +43,10 @@ jobs:
       packages: write
 
     steps:
+      - name: Normalize GHCR image name
+        shell: bash
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/trawl" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v7
 
       - uses: docker/login-action@v4
@@ -98,6 +102,10 @@ jobs:
       packages: write
 
     steps:
+      - name: Normalize GHCR image name
+        shell: bash
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/trawl" >> "$GITHUB_ENV"
+
       - uses: actions/download-artifact@v8
         with:
           path: /tmp/digests
