@@ -24,6 +24,15 @@ const state: {
 
 const handleOwners = new WeakMap<object, BrowserPool>()
 
+type BrowserPoolOptions = ConstructorParameters<typeof BrowserPool>[0]
+
+interface InitPoolOptions {
+  poolSize?: number
+  headfulPoolSize?: number
+  createPool?: (options: BrowserPoolOptions) => BrowserPool
+  initCache?: () => Promise<void>
+}
+
 export const getPool = () => state.pool
 export const getHeadfulPool = () => state.headfulPool
 
@@ -42,9 +51,18 @@ const initSessionCache = async (): Promise<void> => {
   }
 }
 
-export const initPool = async (): Promise<void> => {
-  const pool = new BrowserPool({
-    poolSize: POOL_SIZE,
+export const shutdownPools = async (): Promise<void> => {
+  await Promise.all([state.pool?.shutdown(), state.headfulPool?.shutdown()])
+}
+
+export const initPool = async ({
+  poolSize = POOL_SIZE,
+  headfulPoolSize = HEADFUL_POOL_SIZE,
+  createPool = (options) => new BrowserPool(options),
+  initCache = initSessionCache,
+}: InitPoolOptions = {}): Promise<void> => {
+  const pool = createPool({
+    poolSize,
     acquireTimeoutMs: ACQUIRE_TIMEOUT_MS,
     recycleAfterTemporaryContexts: RECYCLE_AFTER_TEMPORARY_CONTEXTS,
     contentProcesses: CONTENT_PROCESSES,
@@ -53,9 +71,10 @@ export const initPool = async (): Promise<void> => {
     launchTimeoutMs: LAUNCH_TIMEOUT_MS,
   })
 
-  if (HEADFUL_POOL_SIZE > 0) {
-    state.headfulPool = new BrowserPool({
-      poolSize: HEADFUL_POOL_SIZE,
+  state.headfulPool = undefined
+  if (headfulPoolSize > 0) {
+    state.headfulPool = createPool({
+      poolSize: headfulPoolSize,
       acquireTimeoutMs: ACQUIRE_TIMEOUT_MS,
       recycleAfterTemporaryContexts: RECYCLE_AFTER_TEMPORARY_CONTEXTS,
       contentProcesses: CONTENT_PROCESSES,
@@ -71,19 +90,19 @@ export const initPool = async (): Promise<void> => {
   state.pool = pool
 
   try {
-    await Promise.all([initSessionCache(), pool.init()])
+    await Promise.all([initCache(), pool.init()])
     pool.startHealthCheck()
     if (state.headfulPool) {
       await state.headfulPool.init()
       state.headfulPool.startHealthCheck()
-      console.log(`[api] headful pool warm (${HEADFUL_POOL_SIZE} browser${HEADFUL_POOL_SIZE === 1 ? "" : "s"})`)
+      console.log(`[api] headful pool warm (${headfulPoolSize} browser${headfulPoolSize === 1 ? "" : "s"})`)
     }
   } catch (error) {
     await Promise.all([pool.shutdown(), state.headfulPool?.shutdown()])
     throw error
   }
 
-  console.log(`[api] ready — all ${POOL_SIZE} browser${POOL_SIZE === 1 ? "" : "s"} warm`)
+  console.log(`[api] ready — all ${poolSize} browser${poolSize === 1 ? "" : "s"} warm`)
 }
 
 export const getDeps = (): OrchestratorDeps => {
