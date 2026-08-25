@@ -11,9 +11,36 @@ description: Common issues and how to fix them.
 
 **Causes:**
 
-1. **Redis not reachable** — Check `REDIS_URL`. From inside Docker, use `redis://redis:6379` not `redis://localhost:6379`.
-2. **Camoufox binary not installed** — The API Dockerfile runs `bunx camoufox-js fetch`. If this step was skipped (e.g. build cache reuse), rebuild: `docker compose build --no-cache api`.
-3. **shm_size too small** — Ensure `shm_size: 1gb` is set on the API service.
+1. **Camoufox binary not installed** — The API Dockerfile runs `bunx camoufox-js fetch`. If this step was skipped (e.g. build cache reuse), rebuild: `docker compose build --no-cache api`.
+2. **shm_size too small** — Ensure `shm_size: 1gb` is set on the API service.
+
+Redis is optional at runtime. If it is unavailable, TRAWL disables the Tier 2 session-cache
+fast path but can still become ready and scrape through the other tiers.
+
+## Logs report `Tier 2 disabled`
+
+**Symptom:** TRAWL starts, but its logs contain `session cache unavailable — Tier 2 disabled` even
+though `docker compose exec redis redis-cli ping` returns `PONG`.
+
+The Redis-container check only proves that Redis is healthy now. Verify the configured URL, Docker
+DNS, and a fresh Redis connection from inside the already-running TRAWL container:
+
+```bash
+docker compose exec trawl sh -lc 'printf "%s\n" "$REDIS_URL"; getent hosts redis'
+docker compose exec trawl bun -e 'import { RedisClient } from "bun"; const client = new RedisClient(process.env.REDIS_URL); await client.connect(); console.log(await client.ping()); client.close()'
+```
+
+With the supplied Compose files, TRAWL waits for the Redis healthcheck before starting. If the
+second command returns `PONG` on a deployment that logged the warning during an earlier start,
+restart only TRAWL to enable Tier 2:
+
+```bash
+docker compose restart trawl
+```
+
+If the command fails, inspect `docker compose config` for an overridden `REDIS_URL`, custom
+`network_mode`, or networks that are not shared by the `trawl` and `redis` services. Inside Docker,
+use `redis://redis:6379`, not `redis://localhost:6379`.
 
 ### Startup timeout behind Gluetun
 

@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **AWS WAF Challenge support.** Detect the documented `202` Challenge and `405` CAPTCHA responses from their `x-amzn-waf-action` header, with a conservative two-marker HTML fallback. Silent challenges use a dedicated browser waiter for the domain-matching `aws-waf-token`; interactive CAPTCHA is surfaced as `aws-waf-captcha-required` for a future solver.
 
 ### Fixed
+- Wait for the bundled Redis service to pass a `PING` healthcheck before starting TRAWL, preventing a transient Compose startup race from disabling the Tier 2 session cache for the process lifetime (#90).
 - Reap orphaned Camoufox processes in both API container variants by running Bun under Tini (#79).
 - Preserve every upstream `Set-Cookie` field across direct, Tier 1, and browser-backed proxy responses, serializing each cookie as its own HTTP header instead of dropping or malformedly folding repeated values (#64).
 - Treat an explicit request-level `proxy` as a strict routing guarantee: route HTTP(S) Tier 1 requests through it, skip direct Tier 1 for SOCKS, bypass the unproxied Tier 2 cache, prevent proxy-derived sessions from entering the shared domain cache, disable Firefox direct failover, and surface authentication, transport, protocol, and `Proxy-Status` failures as errors instead of successful content (#73).

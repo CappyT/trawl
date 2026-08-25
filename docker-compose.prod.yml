@@ -4,6 +4,12 @@ services:
     restart: always
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 1s
+      retries: 10
+      start_period: 2s
 
   trawl:
     image: ghcr.io/germondai/trawl:latest
@@ -31,7 +37,8 @@ services:
     volumes:
       - trawl_proxy_ca:${MITM_PROXY_CA_DIR:-/data/proxy-ca}
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8191/health"]
       interval: 30s
