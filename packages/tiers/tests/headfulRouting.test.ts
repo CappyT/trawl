@@ -97,6 +97,7 @@ describe("headful pool routing", () => {
     expect(calls).toBe(2)
     expect(acquired).toEqual([false, true])
     expect(released).toEqual([false, true])
+    expect(Object.hasOwn(result.timings[0] ?? {}, "challenge")).toBeFalse()
   })
 
   test("retries Tier 3 once and preserves an explicit SOCKS proxy", async () => {

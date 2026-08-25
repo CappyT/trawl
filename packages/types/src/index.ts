@@ -34,7 +34,6 @@ export interface TierResult {
   status: "success" | "blocked" | "needs-js" | "timeout" | "error" | "skipped"
   durationMs: number
   reason?: string
-  challenge?: string
 }
 
 export interface ScrapeResult {

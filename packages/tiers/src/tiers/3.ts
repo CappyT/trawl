@@ -39,6 +39,7 @@ const DEFAULT_DATACENTER_BLOCKED_REASON =
 
 export interface Tier3Result extends TierResult {
   tier: 3
+  challenge?: "datadome"
   effectiveUrl?: string
   html?: string
   body?: Uint8Array

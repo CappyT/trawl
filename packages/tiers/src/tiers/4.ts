@@ -23,6 +23,7 @@ import { routeContinueOverrides } from "../utils/sanitize"
 
 export interface Tier4Result extends TierResult {
   tier: 4
+  challenge?: "datadome"
   effectiveUrl?: string
   html?: string
   body?: Uint8Array

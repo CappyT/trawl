@@ -78,9 +78,10 @@ export async function scrape(
   const sanitizedHeaders = sanitizeHeaders(req.headers)
   requireContentTypeForBody(sanitizedHeaders, Boolean(req.body))
 
-  const emit = (r: TierResult) => {
-    timings.push(r)
-    deps.onTierAttempt?.(r)
+  const emit = (r: TierResult & { challenge?: unknown }) => {
+    const { challenge: _challenge, ...publicResult } = r
+    timings.push(publicResult)
+    deps.onTierAttempt?.(publicResult)
   }
 
   // Tier 1 is the only look at the wall that happens before a browser is checked out, so
