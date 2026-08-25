@@ -37,6 +37,58 @@ afterEach(() => {
 })
 
 describe("runTier1 — POST support", () => {
+  test("passes an explicit HTTP proxy to Bun fetch", async () => {
+    const restore = installFetchMock()
+    try {
+      const result = await runTier1("https://target.example/x", undefined, undefined, undefined, "http://proxy:8080")
+      expect(result.status).toBe("success")
+      expect((recorded[0].init as RequestInit & { proxy?: string }).proxy).toBe("http://proxy:8080")
+    } finally {
+      restore()
+    }
+  })
+
+  test("normalizes proxy authentication and Proxy-Status failures", async () => {
+    let restore = installFetchMock(
+      () => new Response("proxy auth", { status: 407, headers: { "content-type": "text/plain" } }),
+    )
+    try {
+      const result = await runTier1("https://target.example/x", undefined, undefined, undefined, "http://proxy:8080")
+      expect(result.status).toBe("error")
+      expect(result.reason).toBe("proxy-authentication-failed")
+    } finally {
+      restore()
+    }
+
+    restore = installFetchMock(
+      () =>
+        new Response("upstream failed", {
+          status: 502,
+          headers: { "content-type": "text/plain", "proxy-status": "proxy.example; error=connection_timeout" },
+        }),
+    )
+    try {
+      const result = await runTier1("https://target.example/x", undefined, undefined, undefined, "http://proxy:8080")
+      expect(result.status).toBe("error")
+      expect(result.reason).toBe("proxy-connection-failed")
+    } finally {
+      restore()
+    }
+  })
+
+  test("normalizes an explicit proxy transport failure", async () => {
+    const restore = installFetchMock(() => {
+      throw new Error("TLS connection aborted")
+    })
+    try {
+      const result = await runTier1("https://target.example/x", undefined, undefined, undefined, "https://proxy:1001")
+      expect(result.status).toBe("error")
+      expect(result.reason).toBe("proxy-connection-failed")
+    } finally {
+      restore()
+    }
+  })
+
   test("uses GET with no body when method is omitted", async () => {
     const restore = installFetchMock()
     try {
