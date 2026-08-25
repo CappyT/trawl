@@ -21,6 +21,11 @@ const CLOSE_TIMEOUT_MS = 10_000
 // launch timeout does not cover. 90s is generous but finite.
 const LAUNCH_TIMEOUT_MS = 90_000
 
+/** Firefox must never silently retry a proxied navigation over the host's direct route. */
+export const PROXY_SAFETY_FIREFOX_PREFS = Object.freeze({
+  "network.proxy.failover_direct": false,
+})
+
 type AsyncAction = () => unknown | Promise<unknown>
 
 const settle = (action: AsyncAction): Promise<void> =>
@@ -244,6 +249,8 @@ export class BrowserPool {
       // maps this to firefoxUserPrefs). The earlier `prefs` key was silently
       // ignored, so these settings were dead code in 1.0.0.
       firefox_user_prefs: {
+        // Never bypass a configured proxy when it is unavailable.
+        ...PROXY_SAFETY_FIREFOX_PREFS,
         "dom.ipc.processCount": this.contentProcesses,
         "dom.ipc.processPrelaunch": false,
         "dom.ipc.contentProcessCount": this.contentProcesses,

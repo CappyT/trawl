@@ -115,6 +115,8 @@ SESSION_TTL_SECONDS=1800   # more conservative
 
 ### `PROXY_URL`
 
+These environment-level proxies are escalation pools: direct Tier 1 and cached Tier 2 may complete before they are used. In contrast, the API request-level `proxy` field is a routing guarantee; target traffic for that request never falls back to a direct connection.
+
 **Default:** _(empty — no proxy)_
 
 Datacenter proxy pool used for Tier 3 (fresh challenge solve). TRAWL passes these endpoints to the
