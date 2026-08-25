@@ -27,9 +27,15 @@ export class ScrapeError extends Error {
   }
 }
 
+// DataDome Device Check may require a browser running behind a real display. Keep that
+// opt-in capacity separate so ordinary requests stay on the headless pool.
+export interface AcquireOptions {
+  headful?: boolean
+}
+
 export interface OrchestratorDeps {
-  acquireBrowser(domain: string, budgetMs?: number): Promise<BrowserHandle>
-  releaseBrowser(id: number, lease?: number): void
+  acquireBrowser(domain: string, budgetMs?: number, options?: AcquireOptions): Promise<BrowserHandle>
+  releaseBrowser(handle: BrowserHandle): void
   loadSession(domain: string): Promise<SessionData | undefined>
   saveSession(domain: string, data: SessionData): Promise<void>
   invalidateSession(domain: string): Promise<void>
@@ -77,6 +83,10 @@ export async function scrape(
     deps.onTierAttempt?.(r)
   }
 
+  // Tier 1 is the only look at the wall that happens before a browser is checked out, so
+  // it is also the only chance to pick the right kind of browser for the tiers below.
+  let headful = false
+
   // Tier 1: plain HTTP fetch
   if (!req.skipHttp && !skipTier1ForProxy && maxTier >= 1) {
     const t1 = await runTier1(req.url, sanitizedHeaders, req.method, req.body, tier1Proxy)
@@ -104,6 +114,7 @@ export async function scrape(
         contentType: t1.contentType,
       }
     }
+    headful = t1.challenge === "datadome"
   }
 
   if (maxTier < 2) {
@@ -113,22 +124,36 @@ export async function scrape(
   // Acquire browser for tiers 2-4
   // Pass our own budget so the pool's stall detector doesn't reclaim this browser
   // while the request is still inside the time the caller asked for.
-  const handle = await deps.acquireBrowser(domain, Math.max(maxTimeout - (Date.now() - totalStart), 0))
+  let handle = await deps.acquireBrowser(domain, Math.max(maxTimeout - (Date.now() - totalStart), 0), { headful })
+  let handleReleased = false
+
+  const switchToHeadful = async (): Promise<void> => {
+    if (handle.headful) return
+    deps.releaseBrowser(handle)
+    handleReleased = true
+    handle = await deps.acquireBrowser(domain, Math.max(maxTimeout - (Date.now() - totalStart), 0), { headful: true })
+    handleReleased = false
+  }
 
   try {
     // Tier 2: browser with cached session
     const session = explicitProxy ? undefined : await deps.loadSession(domain)
     if (session && maxTier >= 2) {
       const remaining = maxTimeout - (Date.now() - totalStart)
-      const t2 = await (runners.tier2 ?? runTier2)(
-        req.url,
-        handle,
-        session,
-        remaining,
-        sanitizedHeaders,
-        req.method,
-        req.body,
-      )
+      const tier2Runner = runners.tier2 ?? runTier2
+      let t2 = await tier2Runner(req.url, handle, session, remaining, sanitizedHeaders, req.method, req.body)
+      if (t2.challenge === "datadome" && !handle.headful) {
+        await switchToHeadful()
+        t2 = await tier2Runner(
+          req.url,
+          handle,
+          session,
+          maxTimeout - (Date.now() - totalStart),
+          sanitizedHeaders,
+          req.method,
+          req.body,
+        )
+      }
       emit(t2)
       if (hasUsablePayload(t2)) {
         if (t2.cookies && t2.cookies.length > 0) {
@@ -172,15 +197,20 @@ export async function scrape(
     let t3: Awaited<ReturnType<typeof runTier3>>
     for (let attempt = 0; ; attempt++) {
       const remaining3 = maxTimeout - (Date.now() - totalStart)
-      t3 = await (runners.tier3 ?? runTier3)(
-        req.url,
-        handle,
-        remaining3,
-        proxy3,
-        sanitizedHeaders,
-        req.method,
-        req.body,
-      )
+      const tier3Runner = runners.tier3 ?? runTier3
+      t3 = await tier3Runner(req.url, handle, remaining3, proxy3, sanitizedHeaders, req.method, req.body)
+      if (t3.challenge === "datadome" && !handle.headful) {
+        await switchToHeadful()
+        t3 = await tier3Runner(
+          req.url,
+          handle,
+          maxTimeout - (Date.now() - totalStart),
+          proxy3,
+          sanitizedHeaders,
+          req.method,
+          req.body,
+        )
+      }
 
       const pool = deps.proxyPool
       if (t3.status !== "blocked" || req.proxy || !proxy3 || !pool || attempt + 1 >= MAX_PROXY_ATTEMPTS) break
@@ -240,6 +270,18 @@ export async function scrape(
       console.log(`[orchestrator] Tier 4 via residential proxy: ${proxy4.replace(/\/\/[^@]*@/, "//**@")}`)
       const remaining4 = maxTimeout - (Date.now() - totalStart)
       t4 = await runTier4Lazy(req.url, handle, remaining4, proxy4, sanitizedHeaders, req.method, req.body)
+      if (t4.challenge === "datadome" && !handle.headful) {
+        await switchToHeadful()
+        t4 = await runTier4Lazy(
+          req.url,
+          handle,
+          maxTimeout - (Date.now() - totalStart),
+          proxy4,
+          sanitizedHeaders,
+          req.method,
+          req.body,
+        )
+      }
 
       const pool = deps.residentialProxyPool
       if (t4.status !== "blocked" || req.proxy || !pool || attempt + 1 >= MAX_PROXY_ATTEMPTS) break
@@ -278,6 +320,6 @@ export async function scrape(
 
     throw new ScrapeError(`All tiers exhausted. Last failure: ${t4.reason ?? t4.status}`, timings)
   } finally {
-    deps.releaseBrowser(handle.id, handle.lease)
+    if (!handleReleased) deps.releaseBrowser(handle)
   }
 }

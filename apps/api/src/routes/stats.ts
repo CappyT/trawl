@@ -1,5 +1,5 @@
 import { Elysia } from "elysia"
-import { getPool } from "../deps"
+import { getHeadfulPool, getPool } from "../deps"
 
 export function statsRoute() {
   return new Elysia().get("/stats", () => {
@@ -12,6 +12,8 @@ export function statsRoute() {
       stalled: 0,
       live: 0,
     }
+    // `null` means the optional pool is disabled.
+    const headful = getHeadfulPool()?.getStats()
     return {
       browsers: stats.total,
       available: stats.available,
@@ -20,6 +22,16 @@ export function statsRoute() {
       live: stats.live,
       restarts: stats.restarts,
       queueDepth: 0,
+      headful: headful
+        ? {
+            browsers: headful.total,
+            available: headful.available,
+            busy: headful.busy,
+            stalled: headful.stalled,
+            live: headful.live,
+            restarts: headful.restarts,
+          }
+        : null,
     }
   })
 }

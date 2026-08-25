@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **DataDome support.** Detect Device Check, slider CAPTCHA and `t=bv` hard blocks from challenge markers and `x-dd-b`. Device Check uses a dedicated waiter and an optional headful Xvfb pool; the slider is reported as `datadome-captcha-required`. Enable startup-warmed capacity with `BROWSER_HEADFUL_POOL_SIZE=1` (off by default).
 - **AWS WAF Challenge support.** Detect the documented `202` Challenge and `405` CAPTCHA responses from their `x-amzn-waf-action` header, with a conservative two-marker HTML fallback. Silent challenges use a dedicated browser waiter for the domain-matching `aws-waf-token`; interactive CAPTCHA is surfaced as `aws-waf-captcha-required` for a future solver.
 
 ### Fixed

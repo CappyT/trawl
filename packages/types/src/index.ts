@@ -34,6 +34,7 @@ export interface TierResult {
   status: "success" | "blocked" | "needs-js" | "timeout" | "error" | "skipped"
   durationMs: number
   reason?: string
+  challenge?: string
 }
 
 export interface ScrapeResult {
@@ -107,6 +108,8 @@ export interface BrowserFingerprint {
 // (consumers call .newPage()/.newContext()/.cookies() etc directly on these fields).
 export interface BrowserHandle {
   id: number
+  /** Whether this lease belongs to a browser running behind a virtual display. */
+  headful: boolean
   // Identifies this specific checkout. Pass it back to release() so a request that
   // outlived its checkout can't free a browser the pool has since reclaimed.
   lease: number

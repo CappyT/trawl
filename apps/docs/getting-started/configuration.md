@@ -85,6 +85,33 @@ BROWSER_CONTENT_PROCESSES=2   # default - conservative cap, lowest RAM/CPU
 BROWSER_CONTENT_PROCESSES=4   # raise if CF/Imperva challenges stall
 ```
 
+### `BROWSER_HEADFUL_POOL_SIZE`
+
+**Default:** `0` (disabled)
+
+Browsers in the headful sub-pool. This pool runs behind an Xvfb virtual display and serves
+DataDome Device Check escalations that require a browser running behind a display.
+
+Set it to `1` to scrape DataDome targets. It is off by default because the sub-pool is
+**additional to `BROWSER_POOL_SIZE`**: one headful browser plus its X display measures about
+380 MB (a headful browser is roughly twice a headless one, and Xvfb adds ~65 MB), so leaving
+it on would move the memory ceiling of deployments that never meet DataDome. Account for it
+in `mem_limit` before enabling.
+
+When enabled, the sub-pool is warmed during API startup. A launch failure therefore fails
+startup instead of delaying an individual scrape.
+Readiness at `/health` reports the main pool only; the sub-pool appears under `headful` at
+`/stats`, and reads `null` while disabled.
+
+With the sub-pool disabled, a DataDome escalation fails immediately with a configuration error.
+
+The container images ship the `xvfb` binary.
+
+```ini
+BROWSER_HEADFUL_POOL_SIZE=0   # default - no headful browser
+BROWSER_HEADFUL_POOL_SIZE=1   # required for DataDome targets, ~380 MB on first use
+```
+
 ### Browser recovery timeouts
 
 | Variable | Default | Purpose |

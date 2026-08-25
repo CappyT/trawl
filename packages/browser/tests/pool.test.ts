@@ -62,6 +62,22 @@ function makeFactory() {
   return { factory, browsers, contexts }
 }
 
+describe("BrowserPool mode", () => {
+  test("marks leases from a virtual-display pool as headful", async () => {
+    const { factory } = makeFactory()
+    const pool = createPool({ poolSize: 2, virtualDisplay: true, browserFactory: factory })
+    await pool.init()
+
+    const first = await pool.acquire()
+    const second = await pool.acquire()
+    expect(first.headful).toBeTrue()
+    expect(second.headful).toBeTrue()
+
+    pool.release(first.id, first.lease)
+    expect(pool.getStats().available).toBe(1)
+  })
+})
+
 describe("BrowserPool recycling", () => {
   test("disables Firefox direct fallback for proxied navigations", () => {
     expect(PROXY_SAFETY_FIREFOX_PREFS["network.proxy.failover_direct"]).toBeFalse()
