@@ -92,6 +92,8 @@ const tabs: { id: Tab; label: string; hint: string }[] = [
   redis:
     <span class="k">image:</span> <span class="s">redis:8.8.1-alpine</span>
     <span class="k">volumes:</span> [<span class="s">redis_data:/data</span>]
+    <span class="k">healthcheck:</span>
+      <span class="k">test:</span> [<span class="s">"CMD"</span>, <span class="s">"redis-cli"</span>, <span class="s">"ping"</span>]
   trawl:
     <span class="k">image:</span> <span class="s">ghcr.io/germondai/trawl:latest</span>
     <span class="k">ports:</span>
@@ -105,7 +107,9 @@ const tabs: { id: Tab; label: string; hint: string }[] = [
       <span class="k">MITM_PROXY_CA_DIR:</span> <span class="s">/data/proxy-ca</span>
     <span class="k">volumes:</span>
       - <span class="s">trawl_proxy_ca:/data/proxy-ca</span>
-    <span class="k">depends_on:</span> [<span class="s">redis</span>]
+    <span class="k">depends_on:</span>
+      redis:
+        <span class="k">condition:</span> <span class="s">service_healthy</span>
 <span class="k">volumes:</span>
   redis_data:
   trawl_proxy_ca:</code></pre>
@@ -120,6 +124,8 @@ const tabs: { id: Tab; label: string; hint: string }[] = [
     <span class="k">image:</span> <span class="s">redis:8.8.1-alpine</span>
     <span class="k">restart:</span> <span class="s">always</span>
     <span class="k">volumes:</span> [<span class="s">redis_data:/data</span>]
+    <span class="k">healthcheck:</span>
+      <span class="k">test:</span> [<span class="s">"CMD"</span>, <span class="s">"redis-cli"</span>, <span class="s">"ping"</span>]
   trawl:
     <span class="k">image:</span> <span class="s">ghcr.io/germondai/trawl:latest</span>
     <span class="k">restart:</span> <span class="s">always</span>
@@ -135,7 +141,9 @@ const tabs: { id: Tab; label: string; hint: string }[] = [
       <span class="k">MITM_PROXY_CA_DIR:</span> <span class="s">/data/proxy-ca</span>
     <span class="k">volumes:</span>
       - <span class="s">trawl_proxy_ca:/data/proxy-ca</span>
-    <span class="k">depends_on:</span> [<span class="s">redis</span>]
+    <span class="k">depends_on:</span>
+      redis:
+        <span class="k">condition:</span> <span class="s">service_healthy</span>
     <span class="k">healthcheck:</span>
       <span class="k">test:</span> [<span class="s">"CMD"</span>, <span class="s">"curl"</span>, <span class="s">"-sf"</span>, <span class="s">"http://localhost:8191/health"</span>]
       <span class="k">interval:</span> <span class="s">30s</span>
