@@ -130,6 +130,89 @@ describe("headful pool routing", () => {
     expect(proxies).toEqual(["socks5://proxy.test:1080", "socks5://proxy.test:1080"])
   })
 
+  test("preserves the explicit HTTP proxy selected by a Tier 1 DataDome response", async () => {
+    const proxies: Array<string | undefined> = []
+    const acquired: boolean[] = []
+    const deps: OrchestratorDeps = {
+      acquireBrowser: async (_domain, _budget, options) => {
+        const headful = options?.headful === true
+        acquired.push(headful)
+        return browserHandle(headful)
+      },
+      releaseBrowser: () => {},
+      loadSession: async () => undefined,
+      saveSession: async () => {},
+      invalidateSession: async () => {},
+    }
+    const result = await scrape({ url: "http://target.invalid/datadome", maxTier: 3, proxy: baseUrl }, deps, {
+      tier3: async (_url, _handle, _timeout, proxy) => {
+        proxies.push(proxy)
+        return { tier: 3, status: "success", durationMs: 1, html: "<html>ok</html>", statusCode: 200 }
+      },
+    })
+    expect(result.tier).toBe(3)
+    expect(acquired).toEqual([true])
+    expect(proxies).toEqual([baseUrl])
+  })
+
+  test("preserves an explicit HTTPS proxy after Tier 1 detects DataDome", async () => {
+    const originalFetch = globalThis.fetch
+    const proxies: Array<string | undefined> = []
+    const fetchProxies: Array<string | undefined> = []
+    globalThis.fetch = (async (_input, init) => {
+      fetchProxies.push((init as (RequestInit & { proxy?: string }) | undefined)?.proxy)
+      return new Response(DATADOME_INTERSTITIAL, {
+        status: 403,
+        headers: { "content-type": "text/html", "x-dd-b": "1" },
+      })
+    }) as typeof fetch
+    const deps: OrchestratorDeps = {
+      acquireBrowser: async (_domain, _budget, options) => browserHandle(options?.headful === true),
+      releaseBrowser: () => {},
+      loadSession: async () => undefined,
+      saveSession: async () => {},
+      invalidateSession: async () => {},
+    }
+    try {
+      const result = await scrape({ url: "https://example.test", maxTier: 3, proxy: "https://proxy.test:8443" }, deps, {
+        tier3: async (_url, _handle, _timeout, proxy) => {
+          proxies.push(proxy)
+          return { tier: 3, status: "success", durationMs: 1, html: "<html>ok</html>", statusCode: 200 }
+        },
+      })
+      expect(result.tier).toBe(3)
+      expect(fetchProxies).toEqual(["https://proxy.test:8443"])
+      expect(proxies).toEqual(["https://proxy.test:8443"])
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  test("retries Tier 3 once with the same configured datacenter proxy", async () => {
+    const proxies: Array<string | undefined> = []
+    const deps: OrchestratorDeps = {
+      acquireBrowser: async (_domain, _budget, options) => browserHandle(options?.headful === true),
+      releaseBrowser: () => {},
+      loadSession: async () => undefined,
+      saveSession: async () => {},
+      invalidateSession: async () => {},
+      proxyPool: {
+        next: () => "https://datacenter.test:8443",
+        markBad: () => {},
+      } as OrchestratorDeps["proxyPool"],
+    }
+    const result = await scrape({ url: "https://example.test", skipHttp: true, maxTier: 3 }, deps, {
+      tier3: async (_url, handle, _timeout, proxy) => {
+        proxies.push(proxy)
+        return handle.headful
+          ? { tier: 3, status: "success", durationMs: 1, html: "<html>ok</html>", statusCode: 200 }
+          : { tier: 3, status: "blocked", durationMs: 1, reason: "datadome-persistent", challenge: "datadome" }
+      },
+    })
+    expect(result.tier).toBe(3)
+    expect(proxies).toEqual(["https://datacenter.test:8443", "https://datacenter.test:8443"])
+  })
+
   test("retries late Tier 4 detection with the same residential proxy", async () => {
     const proxies: string[] = []
     const deps: OrchestratorDeps = {
