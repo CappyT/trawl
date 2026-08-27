@@ -32,7 +32,7 @@ Much faster and more reliable FlareSolverr & Byparr alternative and drop-in repl
     <tr>
       <td width="30%" align="center" valign="middle">
         <a href="https://get.brightdata.com/trawl" target="_blank">
-          <img width="1200" height="1200" alt="Bright Data" src="https://github.com/user-attachments/assets/230da630-caf0-40e9-9cb5-8ffad3bd1eb1" />
+          <img width="1254" height="1254" alt="Birght Data" src="https://github.com/user-attachments/assets/f23cfc4a-160d-4576-b27f-5d5bb4738530" />
         </a>
       </td>
       <td valign="middle">
