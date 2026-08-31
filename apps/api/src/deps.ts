@@ -11,6 +11,7 @@ import {
   proxyPool,
   RECYCLE_AFTER_TEMPORARY_CONTEXTS,
   REDIS_URL,
+  RESIDENTIAL_RECONNECT_ATTEMPTS,
   residentialProxyPool,
   SESSION_TTL,
   STALL_TIMEOUT_MS,
@@ -133,5 +134,6 @@ export const getDeps = (): OrchestratorDeps => {
       state.sessionCache ? state.sessionCache.invalidate(d).catch(() => {}) : Promise.resolve(),
     proxyPool,
     residentialProxyPool,
+    residentialReconnectAttempts: RESIDENTIAL_RECONNECT_ATTEMPTS,
   }
 }

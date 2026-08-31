@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test"
 import type { BrowserHandle } from "@trawl/browser"
 import type { AcquireOptions, OrchestratorDeps } from "../src/orchestrator"
 import { scrape } from "../src/orchestrator"
+import { ProxyPool } from "../src/utils/proxyRotator"
 import { DATADOME_INTERSTITIAL } from "./fixtures/datadome"
 
 const server = Bun.serve({
@@ -238,5 +239,73 @@ describe("headful pool routing", () => {
     })
     expect(result.tier).toBe(4)
     expect(proxies).toEqual(["http://residential.test:8080", "http://residential.test:8080"])
+  })
+
+  test("reconnects a rotating residential gateway until an exit passes", async () => {
+    const proxies: string[] = []
+    const markedBad: string[] = []
+    const deps: OrchestratorDeps = {
+      acquireBrowser: async (_domain, _budget, options) => browserHandle(options?.headful === true),
+      releaseBrowser: () => {},
+      loadSession: async () => undefined,
+      saveSession: async () => {},
+      invalidateSession: async () => {},
+      residentialReconnectAttempts: 3,
+      residentialProxyPool: {
+        next: () => "http://residential.test:8080",
+        markBad: (url: string) => markedBad.push(url),
+        rotatesOnReconnect: true,
+      } as OrchestratorDeps["residentialProxyPool"],
+    }
+    const result = await scrape({ url: "https://example.test", skipHttp: true }, deps, {
+      tier3: async () => ({ tier: 3, status: "blocked", durationMs: 1, reason: "other-wall" }),
+      tier4: async (_url, _handle, _timeout, proxy) => {
+        proxies.push(proxy)
+        return proxies.length < 3
+          ? { tier: 4, status: "blocked", durationMs: 1, reason: "cloudflare-persistent" }
+          : { tier: 4, status: "success", durationMs: 1, html: "<html>ok</html>", statusCode: 200 }
+      },
+    })
+    expect(result.tier).toBe(4)
+    expect(proxies).toEqual([
+      "http://residential.test:8080",
+      "http://residential.test:8080",
+      "http://residential.test:8080",
+    ])
+    expect(markedBad).toEqual([])
+  })
+
+  test("a non-rotating residential pool still marks a blocked proxy and moves on", async () => {
+    const picked = ["http://first.test:8080", "http://second.test:8080"]
+    const markedBad: string[] = []
+    const pool = new ProxyPool(picked)
+    const attempts: string[] = []
+    const deps: OrchestratorDeps = {
+      acquireBrowser: async (_domain, _budget, options) => browserHandle(options?.headful === true),
+      releaseBrowser: () => {},
+      loadSession: async () => undefined,
+      saveSession: async () => {},
+      invalidateSession: async () => {},
+      proxyPool: undefined,
+      residentialProxyPool: {
+        next: (domain?: string) => pool.next(domain),
+        markBad: (url: string) => {
+          markedBad.push(url)
+          pool.markBad(url)
+        },
+      } as OrchestratorDeps["residentialProxyPool"],
+    }
+    const result = await scrape({ url: "https://example.test", skipHttp: true, maxTier: 4 }, deps, {
+      tier3: async () => ({ tier: 3, status: "blocked", durationMs: 1, reason: "other-wall" }),
+      tier4: async (_url, _handle, _timeout, proxy) => {
+        attempts.push(proxy)
+        return proxy === picked[0]
+          ? { tier: 4, status: "blocked", durationMs: 1, reason: "cloudflare-persistent" }
+          : { tier: 4, status: "success", durationMs: 1, html: "<html>ok</html>", statusCode: 200 }
+      },
+    })
+    expect(result.tier).toBe(4)
+    expect(attempts).toEqual(picked)
+    expect(markedBad).toEqual([picked[0]])
   })
 })

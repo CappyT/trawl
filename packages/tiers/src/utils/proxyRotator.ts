@@ -50,16 +50,19 @@ export class ProxyPool {
   private proxies: ProxyState[]
   private cursor = 0
   private stickyByDomain = new Map<string, string>()
+  /** Backconnect gateways rotate their exit IP on a fresh connection. */
+  readonly rotatesOnReconnect: boolean
 
-  constructor(urls: string[]) {
+  constructor(urls: string[], options?: { rotatesOnReconnect?: boolean }) {
     this.proxies = urls.filter(Boolean).map((url) => ({ url, badUntil: 0 }))
+    this.rotatesOnReconnect = options?.rotatesOnReconnect ?? false
   }
 
   // Builds a pool from a comma-separated env var and/or a line-delimited file (one proxy
   // per line, '#' comments allowed). A single URL still works — it's just a 1-element list.
   // Returns undefined if neither source yields any proxies, so callers can treat "no proxy
   // configured" the same way they did with the old single-string PROXY_URL/RESIDENTIAL_PROXY_URL.
-  static fromEnv(urlListEnv?: string, fileEnv?: string) {
+  static fromEnv(urlListEnv?: string, fileEnv?: string, options?: { rotatesOnReconnect?: boolean }) {
     const urls: string[] = []
     if (urlListEnv) {
       urls.push(
@@ -80,7 +83,7 @@ export class ProxyPool {
         console.warn(`[proxy] failed to read proxy list file ${fileEnv}:`, err instanceof Error ? err.message : err)
       }
     }
-    return urls.length > 0 ? new ProxyPool(urls) : undefined
+    return urls.length > 0 ? new ProxyPool(urls, options) : undefined
   }
 
   get size(): number {

@@ -40,7 +40,9 @@ export const proxyPool = ProxyPool.fromEnv(process.env.PROXY_URL, process.env.PR
 export const residentialProxyPool = ProxyPool.fromEnv(
   process.env.RESIDENTIAL_PROXY_URL,
   process.env.RESIDENTIAL_PROXY_LIST_FILE,
+  { rotatesOnReconnect: true },
 )
+export const RESIDENTIAL_RECONNECT_ATTEMPTS = Number(process.env.RESIDENTIAL_PROXY_ATTEMPTS ?? "0")
 
 // ── MITM forward-proxy mode ────────────────────────────────────────────────────
 // Optional browser-backed HTTP(S) forward proxy (apps/api/src/proxy). Off by default.

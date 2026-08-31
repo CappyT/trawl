@@ -33,6 +33,14 @@ export interface AcquireOptions {
   headful?: boolean
 }
 
+// A single backconnect gateway can hand out a different exit IP on every new
+// connection, so `blocked` should reconnect through the same URL instead of
+// parking the gateway in cooldown.
+export interface ProxyContextlessRotator {
+  /** Return true when blocked results should retry by reconnecting the same proxy URL. */
+  rotatesOnReconnect?: boolean
+}
+
 export interface OrchestratorDeps {
   acquireBrowser(domain: string, budgetMs?: number, options?: AcquireOptions): Promise<BrowserHandle>
   releaseBrowser(handle: BrowserHandle): void
@@ -41,6 +49,7 @@ export interface OrchestratorDeps {
   invalidateSession(domain: string): Promise<void>
   proxyPool?: ProxyPool
   residentialProxyPool?: ProxyPool
+  residentialReconnectAttempts?: number
   onTierAttempt?: (result: TierResult) => void
 }
 
@@ -258,6 +267,7 @@ export async function scrape(
     // Tier 4: residential proxy escalation — requires at least one residential proxy,
     // supplied either per-request (req.proxy) or via the configured residential pool.
     let proxy4 = req.proxy ?? deps.residentialProxyPool?.next(domain)
+
     if (!proxy4) {
       throw new ScrapeError(
         `Tier 3 failed (${t3.reason ?? t3.status}). Set RESIDENTIAL_PROXY_URL (or pass a proxy per-request) to enable Tier 4 proxy escalation.`,
@@ -267,10 +277,17 @@ export async function scrape(
 
     let t4: Awaited<ReturnType<typeof runTier4>>
     const runTier4Lazy = runners.tier4 ?? (await import("./tiers/4")).runTier4
-    for (let attempt = 0; ; attempt++) {
+    // Distinct proxy URLs budgeted per request, like Tier 3.
+    let proxyAttempts = 1
+    // Reconnects through the same rotating backconnect gateway: a single endpoint whose
+    // exit IP changes per connection. Bounded separately so a blocked exit never eats
+    // the distinct-proxy budget, and vice versa.
+    let reconnectsLeft = Math.max(deps.residentialReconnectAttempts ?? 0, 0)
+    for (;;) {
       console.log(`[orchestrator] Tier 4 via residential proxy: ${proxy4.replace(/\/\/[^@]*@/, "//**@")}`)
       const remaining4 = maxTimeout - (Date.now() - totalStart)
       t4 = await runTier4Lazy(req.url, handle, remaining4, proxy4, sanitizedHeaders, req.method, req.body)
+
       if (t4.challenge === "datadome" && !handle.headful) {
         await switchToHeadful()
         t4 = await runTier4Lazy(
@@ -284,11 +301,24 @@ export async function scrape(
         )
       }
 
+      if (t4.status !== "blocked") break
       const pool = deps.residentialProxyPool
-      if (t4.status !== "blocked" || req.proxy || !pool || attempt + 1 >= MAX_PROXY_ATTEMPTS) break
+      if (req.proxy || !pool) break
+      if (pool.rotatesOnReconnect && reconnectsLeft > 0) {
+        reconnectsLeft--
+        console.log(
+          `[orchestrator] Tier 4 exit blocked — reconnecting rotating residential gateway ${proxy4.replace(
+            /\/\/[^@]*@/,
+            "//**@",
+          )}`,
+        )
+        continue
+      }
+      if (proxyAttempts >= MAX_PROXY_ATTEMPTS) break
       pool.markBad(proxy4)
       const next = pool.next(domain)
       if (!next || next === proxy4) break
+      proxyAttempts++
       proxy4 = next
     }
     emit(t4)
